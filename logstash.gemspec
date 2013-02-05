@@ -23,6 +23,7 @@ Gem::Specification.new do |gem|
   gem.add_runtime_dependency "pry"
   gem.add_runtime_dependency "stud"
   gem.add_runtime_dependency "sys-uname" # for platform detection
+  gem.add_runtime_dependency "clamp" # for command line args/flags
 
   # Web dependencies
   gem.add_runtime_dependency "ftw", ["~> 0.0.26"]
@@ -39,7 +40,7 @@ Gem::Specification.new do |gem|
   gem.add_runtime_dependency "bunny"
   gem.add_runtime_dependency "ffi"
   gem.add_runtime_dependency "ffi-rzmq", ["0.9.3"]
-  gem.add_runtime_dependency "filewatch", ["0.5.0"]
+  gem.add_runtime_dependency "filewatch", ["0.5.1"]
   gem.add_runtime_dependency "gelfd", ["0.2.0"]
   gem.add_runtime_dependency "gelf", ["1.3.2"]
   gem.add_runtime_dependency "gmetric", ["0.1.3"]
@@ -55,7 +56,7 @@ Gem::Specification.new do |gem|
   gem.add_runtime_dependency "uuidtools" # For generating amqp queue names
   gem.add_runtime_dependency "xml-simple"
   gem.add_runtime_dependency "xmpp4r", ["0.5"]
-  gem.add_runtime_dependency "jls-lumberjack", ["0.0.7"]
+  gem.add_runtime_dependency "jls-lumberjack", [">0"]
   gem.add_runtime_dependency "geoip", [">= 1.1.0"]
   gem.add_runtime_dependency "beefcake", "0.3.7"
   gem.add_runtime_dependency "php-serialize" # For input drupal_dblog
