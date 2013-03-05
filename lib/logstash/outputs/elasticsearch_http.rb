@@ -63,17 +63,31 @@ class LogStash::Outputs::ElasticSearchHTTP < LogStash::Outputs::Base
       receive_single(event, index, type)
     else
       receive_bulk(event, index, type)
-    end # 
+    end #
   end # def receive
 
   def receive_single(event, index, type)
     success = false
     while !success
-      response = @agent.post!("http://#{@host}:#{@port}/#{index}/#{type}",
-                              :body => event.to_json)
-      # We must read the body to free up this connection for reuse.
-      body = "";
-      response.read_body { |chunk| body += chunk }
+      begin
+        response = @agent.post!("http://#{@host}:#{@port}/#{index}/#{type}",
+                                :body => event.to_json)
+      rescue EOFError
+        @logger.warn("EOF while writing request or reading response header from elasticsearch",
+                     :host => @host, :port => @port)
+        next # try again
+      end
+
+
+      begin
+        # We must read the body to free up this connection for reuse.
+        body = "";
+        response.read_body { |chunk| body += chunk }
+      rescue EOFError
+        @logger.warn("EOF while reading response body from elasticsearch",
+                     :host => @host, :port => @port)
+        next # try again
+      end
 
       if response.status != 201
         @logger.error("Error writing to elasticsearch",
@@ -104,16 +118,28 @@ class LogStash::Outputs::ElasticSearchHTTP < LogStash::Outputs::Base
     # If we don't tack a trailing newline at the end, elasticsearch
     # doesn't seem to process the last event in this bulk index call.
     #
-    # as documented here: 
+    # as documented here:
     # http://www.elasticsearch.org/guide/reference/api/bulk.html
     #  "NOTE: the final line of data must end with a newline character \n."
-    response = @agent.post!("http://#{@host}:#{@port}/_bulk",
-                            :body => @queue.join("\n") + "\n")
+    begin
+      response = @agent.post!("http://#{@host}:#{@port}/_bulk",
+                              :body => @queue.join("\n") + "\n")
+    rescue EOFError
+      @logger.warn("EOF while writing request or reading response header from elasticsearch",
+                   :host => @host, :port => @port)
+      return # abort this flush
+    end
 
     # Consume the body for error checking
     # This will also free up the connection for reuse.
     body = ""
-    response.read_body { |chunk| body += chunk }
+    begin
+      response.read_body { |chunk| body += chunk }
+    rescue EOFError
+      @logger.warn("EOF while reading response body from elasticsearch",
+                   :host => @host, :port => @port)
+      return # abort this flush
+    end
 
     if response.status != 200
       @logger.error("Error writing (bulk) to elasticsearch",
@@ -143,7 +169,7 @@ class LogStash::Outputs::ElasticSearchHTTP < LogStash::Outputs::Base
       },
       "mappings" => {
         "_default_" => {
-          "_all" => { "enabled" => false } 
+          "_all" => { "enabled" => false }
         }
       }
     } # template_config

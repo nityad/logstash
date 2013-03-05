@@ -47,7 +47,7 @@ module LogStash::Config::Mixin
     # For example: converting a string to a number, etc.
     
     # store the plugin type, turns LogStash::Inputs::Base into 'input'
-    @plugin_type = self.class.ancestors[1].name.split("::")[1].downcase.gsub(/s$/,"")
+    @plugin_type = self.class.ancestors.find { |a| a.name =~ /::Base$/ }.config_name
     if !self.class.validate(params)
       raise LogStash::Plugin::ConfigurationError,
         I18n.t("logstash.agent.configuration.invalid_plugin_settings")
@@ -162,7 +162,8 @@ module LogStash::Config::Mixin
 
     def validate(params)
       @plugin_name = config_name #[superclass.config_name, config_name].join("/")
-      @plugin_type = superclass.config_name
+      @plugin_type = ancestors.find { |a| a.name =~ /::Base$/ }.config_name
+      #.name.split("::")[1].downcase.gsub(/s$/,"")
       @logger = Cabin::Channel.get(LogStash)
       is_valid = true
 
@@ -299,6 +300,7 @@ module LogStash::Config::Mixin
       elsif validator.is_a?(Proc)
         return validator.call(value)
       elsif validator.is_a?(Array)
+        value = [*value]
         if value.size > 1
           return false, "Expected one of #{validator.inspect}, got #{value.inspect}"
         end
@@ -315,24 +317,24 @@ module LogStash::Config::Mixin
         case validator
           when :hash
             if value.is_a?(Hash)
-              result = value
-            else
-              if value.size % 2 == 1
-                return false, "This field must contain an even number of items, got #{value.size}"
-              end
+              return true, value
+            end
 
-              # Convert the array the config parser produces into a hash.
-              result = {}
-              value.each_slice(2) do |key, value|
-                entry = result[key]
-                if entry.nil?
-                  result[key] = value
+            if value.size % 2 == 1
+              return false, "This field must contain an even number of items, got #{value.size}"
+            end
+
+            # Convert the array the config parser produces into a hash.
+            result = {}
+            value.each_slice(2) do |key, value|
+              entry = result[key]
+              if entry.nil?
+                result[key] = value
+              else
+                if entry.is_a?(Array)
+                  entry << value
                 else
-                  if entry.is_a?(Array)
-                    entry << value
-                  else
-                    result[key] = [entry, value]
-                  end
+                  result[key] = [entry, value]
                 end
               end
             end

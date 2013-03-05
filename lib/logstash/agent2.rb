@@ -4,11 +4,6 @@ require "logstash/pipeline"
 require "clamp" # gem 'clamp'
 require "cabin" # gem 'cabin'
 require "sys/uname" # gem 'sys-uname'
-require "i18n" # gem 'i18n'
-
-I18n.load_path << File.expand_path(
-  File.join(File.dirname(__FILE__), "../../locales/en.yml")
-)
 
 class LogStash::Agent2 < Clamp::Command
   class ConfigurationError < StandardError; end
@@ -167,7 +162,6 @@ class LogStash::Agent2 < Clamp::Command
   def configure_logging(path)
     # Set with the -v (or -vv...) flag
     @logger.level = verbosity?
-    puts "Level: #{verbosity?}"
     if !log_file.nil?
       # TODO(sissel): Implement file output/rotation in Cabin.
       # TODO(sissel): Catch exceptions, report sane errors.
@@ -181,7 +175,6 @@ class LogStash::Agent2 < Clamp::Command
       puts "Sending all output to #{path}."
       @logger.subscribe(file)
     else
-      puts "Subscribing to stdout"
       @logger.subscribe(STDOUT)
     end
 
