@@ -21,7 +21,9 @@ class LogStash::Inputs::Heroku < LogStash::Inputs::Base
   # The name of your heroku application. This is usually the first part of the 
   # the domain name 'my-app-name.herokuapp.com'
   config :app, :validate => :string, :required => true
-
+  config :user, :validate => :string
+  config :password, :validate => :string
+  
   public
   def register
     require "heroku"
@@ -30,7 +32,11 @@ class LogStash::Inputs::Heroku < LogStash::Inputs::Base
 
   public
   def run(queue)
-    client = Heroku::Client.new(Heroku::Auth.user, Heroku::Auth.password)
+    if defined? @user || defined? @password
+    	client = Heroku::Client.new(Heroku::Auth.user, Heroku::Auth.password)
+    else 
+     	client = Heroku::Client.new(@user, @password)
+	end
     source = "heroku://#{@app}"
 
     # The 'Herok::Client#read_logs' method emits chunks of text not bounded
