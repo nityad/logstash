@@ -27,7 +27,7 @@ Gem::Specification.new do |gem|
   gem.add_runtime_dependency "i18n"
 
   # Web dependencies
-  gem.add_runtime_dependency "ftw", ["~> 0.0.26"]
+  gem.add_runtime_dependency "ftw", ["~> 0.0.27"]
   gem.add_runtime_dependency "haml"
   gem.add_runtime_dependency "rack"
   gem.add_runtime_dependency "sass"
@@ -35,6 +35,7 @@ Gem::Specification.new do |gem|
 
   # Input/Output/Filter dependencies
   #TODO Can these be optional?
+  gem.add_runtime_dependency "awesome_print"
   gem.add_runtime_dependency "aws-sdk"
   gem.add_runtime_dependency "heroku"
   gem.add_runtime_dependency "addressable", ["~> 2.3.2"]
@@ -68,7 +69,8 @@ Gem::Specification.new do |gem|
     gem.platform = RUBY_PLATFORM
     gem.add_runtime_dependency "jruby-elasticsearch", ["0.0.14"]
     gem.add_runtime_dependency "jruby-httpclient"
-    gem.add_runtime_dependency "jruby-openssl"
+    gem.add_runtime_dependency "bouncy-castle-java", "1.5.0146.1"
+    gem.add_runtime_dependency "jruby-openssl", "0.8.2"
     gem.add_runtime_dependency "jruby-win32ole"
     gem.add_runtime_dependency "jdbc-mysql" # For input drupal_dblog
   else
