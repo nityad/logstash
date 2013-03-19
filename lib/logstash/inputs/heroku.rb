@@ -21,21 +21,28 @@ class LogStash::Inputs::Heroku < LogStash::Inputs::Base
   # The name of your heroku application. This is usually the first part of the 
   # the domain name 'my-app-name.herokuapp.com'
   config :app, :validate => :string, :required => true
-  config :user, :validate => :string
-  config :password, :validate => :string
+  config :envcredentials, :validate => :boolean
   
   public
   def register
     require "heroku"
+    require "heroku-api"
     require "logstash/util/buftok"
   end # def register
 
   public
   def run(queue)
-    if defined? @user || defined? @password
+    if defined? @envcredentials
     	client = Heroku::Client.new(Heroku::Auth.user, Heroku::Auth.password)
     else 
-     	client = Heroku::Client.new(@user, @password)
+        heroku = Heroku::API.new(:api_key => ENV['HEROKU_API_KEY'])   # use API Key
+		keys = heroku.get_keys.body.to_s
+		agentname = ENV['AGENT_NAME']
+		if keys.empty? || (! keys.include? hostname) 
+   			Heroku::Auth.generate_ssh_key(agentname)
+   			Heroku::Auth.associate_key(File.expand_path("~/.ssh/#{agentname}.pub"))
+		end
+        client = Heroku::Client.new(ENV['USERNAME], ENV['USERPASSWORD'])
 	end
     source = "heroku://#{@app}"
 
