@@ -1,6 +1,9 @@
 require "logstash/inputs/base"
 require "logstash/namespace"
 require "logstash/util/socket_peer"
+require "socket"
+require "timeout"
+require "openssl"
 
 # Read events over a TCP socket.
 #
@@ -11,7 +14,7 @@ require "logstash/util/socket_peer"
 class LogStash::Inputs::Tcp < LogStash::Inputs::Base
   class Interrupted < StandardError; end
   config_name "tcp"
-  milestone 2
+  plugin_status "beta"
 
   # When mode is `server`, the address to listen on.
   # When mode is `client`, the address to connect to.
@@ -57,10 +60,7 @@ class LogStash::Inputs::Tcp < LogStash::Inputs::Base
 
   public
   def register
-    require "socket"
-    require "timeout"
     if @ssl_enable
-      require "openssl"
       @ssl_context = OpenSSL::SSL::SSLContext.new
       @ssl_context.cert = OpenSSL::X509::Certificate.new(File.read(@ssl_cert))
       @ssl_context.key = OpenSSL::PKey::RSA.new(File.read(@ssl_key),@ssl_key_passphrase)
@@ -94,7 +94,7 @@ class LogStash::Inputs::Tcp < LogStash::Inputs::Base
   end # def register
 
   private
-  def handle_socket(socket, event_source, output_queue)
+  def handle_socket(socket, output_queue, event_source)
     begin
       loop do
         buf = nil
@@ -108,10 +108,12 @@ class LogStash::Inputs::Tcp < LogStash::Inputs::Base
             buf = readline(socket)
           end
         end
-        @codec.decode(buf) do |event|
-          event["source"] = event_source
-          event["sslsubject"] = socket.peer_cert.subject if @ssl_enable && @ssl_verify
-          output_queue << event
+        e = self.to_event(buf, event_source)
+        if e
+          if @ssl_enable && @ssl_verify
+            e.fields["sslsubject"] = socket.peer_cert.subject
+          end
+          output_queue << e
         end
       end # loop do
     rescue => e
@@ -156,7 +158,7 @@ class LogStash::Inputs::Tcp < LogStash::Inputs::Base
             @logger.debug("Accepted connection", :client => s.peer,
                           :server => "#{@host}:#{@port}")
             begin
-              handle_socket(s, "tcp://#{s.peer}/", output_queue)
+              handle_socket(s, output_queue, "tcp://#{s.peer}/")
             rescue Interrupted
               s.close rescue nil
             end
@@ -196,7 +198,7 @@ class LogStash::Inputs::Tcp < LogStash::Inputs::Base
         end
         client_socket.instance_eval { class << self; include ::LogStash::Util::SocketPeer end }
         @logger.debug("Opened connection", :client => "#{client_socket.peer}")
-        handle_socket(client_socket, "tcp://#{client_socket.peer}/server", output_queue)
+        handle_socket(client_socket, output_queue, "tcp://#{client_socket.peer}/server")
       end # loop
     end
   end # def run

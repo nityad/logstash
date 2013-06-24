@@ -30,7 +30,10 @@ class LogStash::Outputs::Sns < LogStash::Outputs::Base
   MAX_MESSAGE_SIZE_IN_BYTES       = 32768
 
   config_name "sns"
-  milestone 1
+  plugin_status "experimental"
+
+  # The `credentials` option is deprecated, please update your config to use `aws_credentials_file` instead
+  config :credentials, :validate => :string, :deprecated => true
 
   # Message format.  Defaults to plain text.
   config :format, :validate => [ "json", "plain" ], :default => "plain"
@@ -56,6 +59,11 @@ class LogStash::Outputs::Sns < LogStash::Outputs::Base
   public
   def register
     require "aws-sdk"
+
+    # This should be removed when the deprecated aws credentials option is removed
+    if (@credentials)
+      @aws_credentials_file = @credentials
+    end
 
     @sns = AWS::SNS.new(aws_options_hash)
 

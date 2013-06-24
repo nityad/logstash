@@ -23,7 +23,7 @@ require "logstash/namespace"
 class LogStash::Outputs::NagiosNsca < LogStash::Outputs::Base
 
   config_name "nagios_nsca"
-  milestone 1
+  plugin_status "experimental"
 
   # The status to send to nagios. Should be 0 = OK, 1 = WARNING, 2 = CRITICAL, 3 = UNKNOWN
   config :nagios_status, :validate => :string, :required => true
@@ -50,11 +50,6 @@ class LogStash::Outputs::NagiosNsca < LogStash::Outputs::Base
   # parameter accepts interpolation, e.g. you can use @source_host or other
   # logstash internal variables.
   config :nagios_service, :validate => :string, :default => "LOGSTASH"
-
-  # The format to use when writing events to nagios. This value
-  # supports any string and can include %{name} and other dynamic
-  # strings.
-  config :message_format, :validate => :string, :default => "%{@timestamp} %{@source}: %{@message}"
 
   public
   def register
@@ -85,7 +80,7 @@ class LogStash::Outputs::NagiosNsca < LogStash::Outputs::Base
 
     # escape basic things in the log message
     # TODO: find a way to escape the message correctly
-    msg = event.sprintf(@message_format)
+    msg = event.to_s
     msg.gsub!("\n", "<br/>")
     msg.gsub!("'", "&#146;")
 

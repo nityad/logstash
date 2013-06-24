@@ -8,32 +8,31 @@ describe LogStash::Filters::Xml do
     config <<-CONFIG
     filter {
       xml {
-        source => "raw"
-        target => "data"
+        raw => "data"
       }
     }
     CONFIG
 
-    sample("raw" => '<foo key="value"/>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"raw" => '<foo key="value"/>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == {"key" => "value"}
     end
 
     #From parse xml with array as a value
-    sample("raw" => '<foo><key>value1</key><key>value2</key></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"raw" => '<foo><key>value1</key><key>value2</key></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == {"key" => ["value1", "value2"]}
     end
 
     #From parse xml with hash as a value
-    sample("raw" => '<foo><key1><key2>value</key2></key1></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"raw" => '<foo><key1><key2>value</key2></key1></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == {"key1" => [{"key2" => ["value"]}]}
     end
 
     #From bad xml
-    sample("raw" => '<foo /') do
-      insist { subject["tags"] }.include?("_xmlparsefailure")
+    sample({"@fields" => {"raw" => '<foo /'}}) do
+      insist { subject.tags}.include?("_xmlparsefailure")
     end
   end
 
@@ -41,15 +40,14 @@ describe LogStash::Filters::Xml do
     config <<-CONFIG
     filter {
       xml {
-        source => "raw"
-        target => "data"
+        raw => "data"
         store_xml => false
       }
     }
     CONFIG
 
-    sample("raw" => '<foo key="value"/>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"raw" => '<foo key="value"/>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == nil
     end
   end
@@ -58,22 +56,21 @@ describe LogStash::Filters::Xml do
     config <<-CONFIG
     filter {
       xml {
-        source => "raw"
-        target => "data"
+        raw => "data"
         xpath => [ "/foo/key/text()", "xpath_field" ]
       }
     }
     CONFIG
 
     # Single value
-    sample("raw" => '<foo><key>value</key></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"raw" => '<foo><key>value</key></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["xpath_field"]} == ["value"]
     end
 
     #Multiple values
-    sample("raw" => '<foo><key>value1</key><key>value2</key></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"raw" => '<foo><key>value1</key><key>value2</key></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["xpath_field"]} == ["value1","value2"]
     end
   end
@@ -90,26 +87,26 @@ describe LogStash::Filters::Xml do
     }
     CONFIG
 
-    sample("xmldata" => '<foo key="value"/>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"xmldata" => '<foo key="value"/>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == {"key" => "value"}
     end
 
     #From parse xml with array as a value
-    sample("xmldata" => '<foo><key>value1</key><key>value2</key></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"xmldata" => '<foo><key>value1</key><key>value2</key></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == {"key" => ["value1", "value2"]}
     end
 
     #From parse xml with hash as a value
-    sample("xmldata" => '<foo><key1><key2>value</key2></key1></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"xmldata" => '<foo><key1><key2>value</key2></key1></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == {"key1" => [{"key2" => ["value"]}]}
     end
 
     #From bad xml
-    sample("xmldata" => '<foo /') do
-      insist { subject["tags"] }.include?("_xmlparsefailure")
+    sample({"@fields" => {"xmldata" => '<foo /'}}) do
+      insist { subject.tags}.include?("_xmlparsefailure")
     end
   end
 
@@ -124,8 +121,8 @@ describe LogStash::Filters::Xml do
     }
     CONFIG
 
-    sample("xmldata" => '<foo key="value"/>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"xmldata" => '<foo key="value"/>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["data"]} == nil
     end
   end
@@ -142,14 +139,14 @@ describe LogStash::Filters::Xml do
     CONFIG
 
     # Single value
-    sample("xmldata" => '<foo><key>value</key></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"xmldata" => '<foo><key>value</key></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["xpath_field"]} == ["value"]
     end
 
     #Multiple values
-    sample("xmldata" => '<foo><key>value1</key><key>value2</key></foo>') do
-      insist { subject["tags"] }.nil?
+    sample({"@fields" => {"xmldata" => '<foo><key>value1</key><key>value2</key></foo>'}}) do
+      reject { subject.tags}.include?("_xmlparsefailure")
       insist { subject["xpath_field"]} == ["value1","value2"]
     end
   end

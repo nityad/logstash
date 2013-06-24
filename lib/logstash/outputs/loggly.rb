@@ -25,7 +25,7 @@ end
 # and 'json logging' enabled.
 class LogStash::Outputs::Loggly < LogStash::Outputs::Base
   config_name "loggly"
-  milestone 2
+  plugin_status "beta"
 
   # The hostname to send logs to. This should target the loggly http input
   # server which is usually "logs.loggly.com"
@@ -55,7 +55,7 @@ class LogStash::Outputs::Loggly < LogStash::Outputs::Base
   config :proxy_user, :validate => :string
 
   # Proxy Password
-  config :proxy_password, :validate => :password, :default => ""
+  config :proxy_password, :validate => :password
 
 
   public
@@ -75,7 +75,7 @@ class LogStash::Outputs::Loggly < LogStash::Outputs::Base
     # Send the event over http.
     url = URI.parse("#{@proto}://#{@host}/inputs/#{event.sprintf(@key)}")
     @logger.info("Loggly URL", :url => url)
-    http = Net::HTTP::Proxy(@proxy_host, @proxy_port, @proxy_user, @proxy_password.value).new(url.host, url.port)
+    http = Net::HTTP::Proxy(@proxy_host, @proxy_port, @proxy_user, @proxy_password.value).new(uri.host, uri.port)
     if url.scheme == 'https'
       http.use_ssl = true
       http.verify_mode = OpenSSL::SSL::VERIFY_NONE

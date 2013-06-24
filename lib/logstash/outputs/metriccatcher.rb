@@ -17,7 +17,7 @@ require "json"
 #     }
 class LogStash::Outputs::MetricCatcher < LogStash::Outputs::Base
   config_name "metriccatcher"
-  milestone 2
+  plugin_status "beta"
 
   # The address of the MetricCatcher
   config :host, :validate => :string, :default => "localhost"

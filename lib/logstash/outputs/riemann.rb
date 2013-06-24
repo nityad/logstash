@@ -17,7 +17,7 @@ require "logstash/namespace"
 #
 class LogStash::Outputs::Riemann < LogStash::Outputs::Base
   config_name "riemann"
-  milestone 1
+  plugin_status "experimental"
 
   # The address of the Riemann server.
   config :host, :validate => :string, :default => "localhost"
@@ -83,6 +83,11 @@ class LogStash::Outputs::Riemann < LogStash::Outputs::Base
     r_event[:description] = event.message
     if @riemann_event
       @riemann_event.each do |key, val|
+        # Catch invalid options since hash syntax doesn't support it
+        unless ["description","state","metric","ttl", "service"].include?(key) 
+          @logger.warn("Invalid key specified in riemann_event", :key => key)
+          next
+        end
         if ["ttl","metric"].include?(key)
           r_event[key.to_sym] = event.sprintf(val).to_f
         else

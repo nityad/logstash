@@ -7,7 +7,7 @@ require "socket"
 #
 class LogStash::Outputs::Opentsdb < LogStash::Outputs::Base
   config_name "opentsdb"
-  milestone 1
+  plugin_status "experimental"
 
   # Enable debugging. Tries to pretty-print the entire event object.
   config :debug, :validate => :boolean

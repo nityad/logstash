@@ -10,7 +10,7 @@ require "socket"
 #
 class LogStash::Inputs::Ganglia < LogStash::Inputs::Base
   config_name "ganglia"
-  milestone 1
+  plugin_status "experimental"
 
   # The address to listen on
   config :host, :validate => :string, :default => "0.0.0.0"

@@ -9,7 +9,7 @@ require "socket" # for Socket.gethostname
 #
 class LogStash::Inputs::Pipe < LogStash::Inputs::Base
   config_name "pipe"
-  milestone 1
+  plugin_status "experimental"
 
   # Command to run and read events from, one line at a time.
   #

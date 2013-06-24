@@ -30,7 +30,7 @@ require "logstash/namespace"
 class LogStash::Filters::DNS < LogStash::Filters::Base
 
   config_name "dns"
-  milestone 2
+  plugin_status "beta"
 
   # Reverse resolve one or more fields.
   config :reverse, :validate => :array
@@ -40,23 +40,11 @@ class LogStash::Filters::DNS < LogStash::Filters::Base
 
   # Determine what action to do: append or replace the values in the fields
   # specified under "reverse" and "resolve."
-  config :action, :validate => [ "append", "replace" ], :default => "append"
-
-  # Use custom nameserver.
-  config :nameserver, :validate => :string
-
-  # TODO(sissel): make 'action' required? This was always the intent, but it
-  # due to a typo it was never enforced. Thus the default behavior in past
-  # versions was 'append' by accident.
+  config :action, :validate => [ "append", "replace" ], :require => true
 
   public
   def register
     require "resolv"
-    if @nameserver.nil?
-      @resolv = Resolv.new
-    else
-      @resolv = Resolv.new(resolvers=[::Resolv::Hosts.new, ::Resolv::DNS.new(:nameserver => [@nameserver], :search => [], :ndots => 1)])
-    end
 
     @ip_validator = Resolv::AddressRegex
   end # def register
@@ -86,7 +74,7 @@ class LogStash::Filters::DNS < LogStash::Filters::Base
       end
 
       begin
-        address = @resolv.getaddress(raw)
+        address = Resolv.getaddress(raw)
       rescue Resolv::ResolvError
         @logger.debug("DNS: couldn't resolve the hostname.",
                       :field => field, :value => raw)
@@ -144,7 +132,7 @@ class LogStash::Filters::DNS < LogStash::Filters::Base
         return
       end
       begin
-        hostname = @resolv.getname(raw)
+        hostname = Resolv.getname(raw)
       rescue Resolv::ResolvError
         @logger.debug("DNS: couldn't resolve the address.",
                       :field => field, :value => raw)

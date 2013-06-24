@@ -5,7 +5,7 @@ require "logstash/outputs/base"
 # is not useful for general deployment.
 class LogStash::Outputs::Internal < LogStash::Outputs::Base
   config_name "internal"
-  milestone 3
+  plugin_status "stable"
 
   attr_accessor :callbacks
 

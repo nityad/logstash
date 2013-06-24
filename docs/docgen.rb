@@ -21,7 +21,7 @@ class LogStashConfigDocGenerator
       /^ *class.*< *LogStash::(Outputs|Filters|Inputs)::(Base|Threadable)/ => \
         lambda { |m| set_class_description },
       /^ *config +[^=].*/ => lambda { |m| add_config(m[0]) },
-      /^ *milestone .*/ => lambda { |m| set_milestone(m[0]) },
+      /^ *plugin_status .*/ => lambda { |m| set_plugin_status(m[0]) },
       /^ *config_name .*/ => lambda { |m| set_config_name(m[0]) },
       /^ *flag[( ].*/ => lambda { |m| add_flag(m[0]) },
       /^ *(class|def|module) / => lambda { |m| clear_comments },
@@ -97,8 +97,9 @@ class LogStashConfigDocGenerator
     @name = name
   end # def set_config_name
 
-  def set_milestone(code)
-    @milestone = eval(code)
+  def set_plugin_status(code)
+    status = eval(code)
+    @plugin_status = status
   end
 
   # pretend to be the config DSL and just get the name
@@ -118,10 +119,10 @@ class LogStashConfigDocGenerator
     return name
   end # def config_name
 
-  # pretend to be the config dsl's 'milestone' method
-  def milestone(m)
-    return m
-  end # def milestone
+  # pretend to be the config dsl's 'plugin_status' method
+  def plugin_status(status)
+    return status
+  end # def plugin_status
 
   def clear_comments
     @comments.clear
@@ -129,7 +130,7 @@ class LogStashConfigDocGenerator
 
   def generate(file, settings)
     @class_description = ""
-    @milestone = ""
+    @plugin_status = ""
     @comments = []
     @attributes = Hash.new { |h,k| h[k] = {} }
     @flags = {}

@@ -13,7 +13,7 @@ class LogStash::Outputs::Boundary < LogStash::Outputs::Base
   #
 
   config_name "boundary"
-  milestone 1
+  plugin_status "experimental"
 
   # Your Boundary API key
   config :api_key, :validate => :string, :required => true
@@ -36,22 +36,15 @@ class LogStash::Outputs::Boundary < LogStash::Outputs::Base
   config :end_time, :validate => :string
 
   # Type
-  config :btype, :validate => :string
+  config :btype, :validate => :string, :default => "%{@message}"
 
   # Sub-Type
-  config :bsubtype, :validate => :string
+  config :bsubtype, :validate => :string, :default => "%{@type}"
 
   # Tags
   # Set any custom tags for this event
   # Default are the Logstash tags if any
   config :btags, :validate => :array
-
-  # Auto
-  # If set to true, logstash will try to pull boundary fields out
-  # of the event. Any field explicitly set by config options will
-  # override these.
-  # ['type', 'subtype', 'creation_time', 'end_time', 'links', 'tags', 'loc']
-  config :auto, :validate => :boolean, :default => false
 
   public
   def register
@@ -69,32 +62,33 @@ class LogStash::Outputs::Boundary < LogStash::Outputs::Base
   def receive(event)
     return unless output?(event)
 
+
     boundary_event = Hash.new
-    boundary_keys = ['type', 'subtype', 'creation_time', 'end_time', 'links', 'tags', 'loc']
-
-    boundary_event['start_time'] = event.sprintf(@start_time) if @start_time
-    boundary_event['end_time'] = event.sprintf(@end_time) if @end_time
-    boundary_event['type'] = event.sprintf(@btype) if @btype
-    boundary_event['subtype'] = event.sprintf(@bsubtype) if @bsubtype
-    boundary_event['tags'] = @btags.collect { |x| event.sprintf(x) } if @btags
-
-    if @auto
-      boundary_fields = event['@fields'].select { |k| boundary_keys.member? k }
-      boundary_event = boundary_fields.merge boundary_event
+    
+    if @start_time
+      boundary_event['start_time'] = event.sprintf(@start_time)
+    else
+      boundary_event['start_time'] = event.unix_timestamp.to_i
     end
 
-    boundary_event = {
-      'type' => event.sprintf("%{message}"),
-      'subtype' => event.sprintf("%{type}"),
-      'start_time' => event.unix_timestamp.to_i,
-      'end_time' => event.unix_timestamp.to_i,
-      'links' => [],
-      'tags' => event.tags,
-    }.merge boundary_event
+    if @end_time
+      boundary_event['end_time'] = event.sprintf(@end_time)
+    else
+      boundary_event['end_time'] = event.unix_timestamp.to_i
+    end
+
+    boundary_event['type'] = event.sprintf(@btype)
+    boundary_event['sub_type'] = event.sprintf(@bsubtype) if @bsubtype
+    if @btags
+      tagz = @btags.collect {|x| event.sprintf(x) }
+    else
+      tagz = event.tags
+    end
+    boundary_event['tags'] = tagz if tagz
 
     request = Net::HTTP::Post.new(@uri.path)
     request.basic_auth(@api_key, '')
-
+    
     @logger.debug("Boundary event", :boundary_event => boundary_event)
 
     begin
@@ -104,12 +98,7 @@ class LogStash::Outputs::Boundary < LogStash::Outputs::Base
       @logger.warn("Boundary convo", :request => request.inspect, :response => response.inspect)
       raise unless response.code == '201'
     rescue Exception => e
-      @logger.warn(
-        "Unhandled exception",
-        :request => request.inspect,
-        :response => response.inspect,
-        :exception => e.inspect
-      )
+      @logger.warn("Unhandled exception", :request => request.inspect, :response => response.inspect, :exception => e.inspect)
     end
   end # def receive
 end

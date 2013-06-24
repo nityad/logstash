@@ -21,61 +21,17 @@ You can also find documentation on the <http://logstash.net> site.
 
 ## Developing
 
-If you don't have JRuby already (or don't use rvm, rbenv, etc), you can have `bin/logstash` fetch it for you by setting `USE_JRUBY`:
-
-    USE_JRUBY=1 bin/logstash ...
-
-Otherwise, here's how to get started with rvm: 
+To work on the code without building a jar, install rvm and run the following:
 
     # Install JRuby with rvm
-    rvm install jruby-1.7.4
-    rvm use jruby-1.7.4
+    rvm install jruby-1.7.1
+    rvm use jruby-1.7.1
 
-Now install dependencies:
-
-    # Install logstash ruby dependencies
+    # Install logstash dependencies
     ruby gembag.rb logstash.gemspec
-
-    # to use logstash gems or libraries in irb, use the following
-    # this gets you an 'irb' shell with logstash's environment
-    bin/logstash irb
-
-    # or use irb from the jar
-    java -jar logstash-<version>-monolithic.jar irb
 
     # Run logstash
     bin/logstash agent [options]
-    
-    # If running bin/logstash agent yields complaints about log4j/other things
-    # This will download the elasticsearch jars so logstash can use them.
-    make vendor-elasticsearch
-
-## Testing
-
-There are a few ways to run the tests. For development, using `bin/logstash
-rspec <some spec>` will suffice:
-
-    % bin/logstash rspec spec/filters/grok.rb 
-    ...................
-
-    Finished in 0.123 seconds
-    19 examples, 0 failures
-
-Alternately, if you have just built the flatjar or jar, you can run the tests
-specifically on those like so:
-
-    % make flatjar-test
-    # or ...
-    % make jar-test
-
-Finally, like 'bin/logstash rspec' above, you can invoke the jar to run a test
-like so:
-
-    % java -jar logstash.jar rspec spec/filters/grok.rb
-    ...................
-
-    Finished in 0.346 seconds
-    19 examples, 0 failures
 
 ## Building
 
@@ -92,9 +48,8 @@ know.
 
 ## Project Principles
 
-* Community: If a newbie has a bad time, it's a bug.
 * Software: Make it work, then make it right, then make it fast.
-* Technology: If it doesn't do a thing today, we can make it do it tomorrow.
+* Community: If a newbie has a bad time, it's a bug.
 
 ## Contributing
 

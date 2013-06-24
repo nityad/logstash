@@ -4,10 +4,10 @@ require "zlib"
 
 # Read Zenoss events from the zenoss.zenevents fanout exchange.
 #
-class LogStash::Inputs::Zenoss < LogStash::Inputs::RabbitMQ
+class LogStash::Inputs::Zenoss < LogStash::Inputs::RabitMQ
 
   config_name "zenoss"
-  milestone 1
+  plugin_status "experimental"
 
   # Your rabbitmq server address
   config :host, :validate => :string, :default => "localhost"

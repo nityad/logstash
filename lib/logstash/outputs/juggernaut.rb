@@ -13,7 +13,7 @@ require "logstash/event"
 class LogStash::Outputs::Juggernaut < LogStash::Outputs::Base
 
   config_name "juggernaut"
-  milestone 1
+  plugin_status "experimental"
 
   # The hostname of the redis server to which juggernaut is listening.
   config :host, :validate => :string, :default => "127.0.0.1"

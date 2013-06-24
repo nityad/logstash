@@ -8,7 +8,7 @@ require "logstash/namespace"
 class LogStash::Inputs::Lumberjack < LogStash::Inputs::Base
 
   config_name "lumberjack"
-  milestone 1
+  plugin_status "experimental"
 
   # the address to listen on.
   config :host, :validate => :string, :default => "0.0.0.0"
@@ -54,7 +54,7 @@ class LogStash::Inputs::Lumberjack < LogStash::Inputs::Base
       #l.each do |key, value|
         #event[key] = value
       #end
-      event.fields.merge!(l)
+      event.fields.merge(l)
 
       output_queue << event
     end

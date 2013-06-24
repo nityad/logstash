@@ -17,7 +17,7 @@ require "net/http"
 class LogStash::Outputs::ElasticSearchRiver < LogStash::Outputs::Base
 
   config_name "elasticsearch_river"
-  milestone 2
+  plugin_status "beta"
 
   config :debug, :validate => :boolean, :default => false
 
@@ -86,6 +86,13 @@ class LogStash::Outputs::ElasticSearchRiver < LogStash::Outputs::Base
   public
   def register
 
+    if @name
+      if @queue
+        @logger.error("'name' and 'queue' are the same setting, but 'name' is deprecated. Please use only 'queue'")
+      end
+      @queue = @name
+    end
+
     # TODO(sissel): find a better way of declaring where the elasticsearch
     # libraries are
     # TODO(sissel): can skip this step if we're running from a jar.
@@ -107,7 +114,7 @@ class LogStash::Outputs::ElasticSearchRiver < LogStash::Outputs::Base
       "user" => [@user],
       "password" => [@password],
       "exchange_type" => [@exchange_type],
-      "exchange" => [@exchange],
+      "name" => [@exchange],
       "key" => [@key],
       "vhost" => [@vhost],
       "durable" => [@durable.to_s],

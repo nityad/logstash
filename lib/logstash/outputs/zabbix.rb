@@ -50,7 +50,7 @@ require "logstash/outputs/base"
 class LogStash::Outputs::Zabbix < LogStash::Outputs::Base
  
   config_name "zabbix"
-  milestone 2
+  plugin_status "beta"
 
   config :host, :validate => :string, :default => "localhost"
   config :port, :validate => :number, :default => 10051

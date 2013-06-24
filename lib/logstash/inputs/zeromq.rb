@@ -14,7 +14,7 @@ require "socket"
 class LogStash::Inputs::ZeroMQ < LogStash::Inputs::Base
 
   config_name "zeromq"
-  milestone 2
+  plugin_status "beta"
 
   # 0mq socket address to connect or bind
   # Please note that `inproc://` will not work with logstash

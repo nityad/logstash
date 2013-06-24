@@ -1,9 +1,15 @@
+require "logstash/namespace"
+require "logstash/program"
+require "logstash/util"
+require "logstash/JRUBY-6970"
+require "stud/trap"
 
-$START = Time.now
-$DEBUGLIST = (ENV["DEBUG"] || "").split(",")
+require "i18n" # gem 'i18n'
+I18n.load_path << File.expand_path(
+  File.join(File.dirname(__FILE__), "../../locales/en.yml")
+)
 
-Thread.abort_on_exception = true
-if ENV["PROFILE_BAD_LOG_CALLS"] || $DEBUGLIST.include?("log")
+if ENV["PROFILE_BAD_LOG_CALLS"]
   # Set PROFILE_BAD_LOG_CALLS=1 in your environment if you want
   # to track down logger calls that cause performance problems
   #
@@ -36,37 +42,30 @@ if ENV["PROFILE_BAD_LOG_CALLS"] || $DEBUGLIST.include?("log")
       end
     end
   end
-end # PROFILE_BAD_LOG_CALLS
-
-require "logstash/monkeypatches-for-performance"
-require "logstash/monkeypatches-for-bugs"
-require "logstash/monkeypatches-for-debugging"
-require "logstash/namespace"
-require "logstash/program"
-require "i18n" # gem 'i18n'
-I18n.load_path << File.expand_path(
-  File.join(File.dirname(__FILE__), "../../locales/en.yml")
-)
+end
 
 class LogStash::Runner
   include LogStash::Program
 
   def main(args)
-    require "logstash/util"
-    require "stud/trap"
     @startup_interruption_trap = Stud::trap("INT") { puts "Interrupted"; exit 0 }
-
     LogStash::Util::set_thread_name(self.class.name)
     $: << File.join(File.dirname(__FILE__), "..")
 
+    if args.empty?
+      $stderr.puts "No arguments given."
+      exit(1)
+    end
+
     if RUBY_VERSION < "1.9.2"
       $stderr.puts "Ruby 1.9.2 or later is required. (You are running: " + RUBY_VERSION + ")"
+      $stderr.puts "Options for fixing this: "
+      $stderr.puts "  * If doing 'ruby bin/logstash ...' add --1.9 flag to 'ruby'"
+      $stderr.puts "  * If doing 'java -jar ... ' add -Djruby.compat.version=RUBY1_9 to java flags"
       return 1
     end
 
     Stud::untrap("INT", @startup_interruption_trap)
-
-    args = [nil] if args.empty?
 
     @runners = []
     while !args.empty?
@@ -80,7 +79,7 @@ class LogStash::Runner
     end
 
     # Avoid running test/unit's at_exit crap
-    if status.empty? || status.first.nil?
+    if status.empty?
       exit(0)
     else
       exit(status.first)
@@ -90,18 +89,20 @@ class LogStash::Runner
   def run(args)
     command = args.shift
     commands = {
-      "version" => lambda { emit_version(args) },
+      "-v" => lambda { emit_version(args) },
+      "-V" => lambda { emit_version(args) },
+      "--version" => lambda { emit_version(args) },
+      "agent" => lambda do
+        require "logstash/agent"
+        agent = LogStash::Agent.new
+        @runners << agent
+        return agent.run(args)
+      end,
       "web" => lambda do
         require "logstash/web/runner"
         web = LogStash::Web::Runner.new
         @runners << web
         return web.run(args)
-      end,
-      "kibana" => lambda do
-        require "logstash/kibana"
-        kibana = LogStash::Kibana::Runner.new
-        @runners << kibana
-        return kibana.run(args)
       end,
       "test" => lambda do
         $: << File.join(File.dirname(__FILE__), "..", "..", "test")
@@ -120,7 +121,7 @@ class LogStash::Runner
             if !File.exists?(arg) && __FILE__ =~ /file:.*\.jar!\//
               # Try inside the jar.
               jar_root = __FILE__.gsub(/!.*/,"!")
-              newpath = File.join(jar_root, arg)
+              newpath = File.join(jar_root, args.first)
 
               # Strip leading 'jar:' path (JRUBY_6970)
               newpath.gsub!(/^jar:/, "")
@@ -167,27 +168,27 @@ class LogStash::Runner
         require "pry"
         return binding.pry
       end,
-      "agent" => lambda do
-        require "logstash/agent"
+      "agent2" => lambda do
+        require "logstash/agent2"
         # Hack up a runner
         runner = Class.new do
           def initialize(args)
             @args = args
           end
           def run
-            #@thread = Thread.new do
-              @result = LogStash::Agent.run($0, @args)
-            #end
+            @thread = Thread.new do
+              @result = LogStash::Agent2.run($0, @args)
+            end
           end
           def wait
-            #@thread.join
+            @thread.join
             return @result
           end
         end
 
         agent = runner.new(args)
         agent.run
-        #@runners << agent
+        @runners << agent
         return []
       end
     } # commands
@@ -200,18 +201,8 @@ class LogStash::Runner
       else
         $stderr.puts "No such command #{command.inspect}"
       end
-      $stderr.puts "Usage: logstash <command> [command args]"
-      $stderr.puts "Run a command with the --help flag to see the arguments."
-      $stderr.puts "For example: logstash agent --help"
-      $stderr.puts
-      # hardcode the available commands to reduce confusion.
       $stderr.puts "Available commands:"
-      $stderr.puts "  agent - runs the logstash agent"
-      $stderr.puts "  version - emits version info about this logstash"
-      $stderr.puts "  web - runs the logstash web ui"
-      $stderr.puts "  kibana - runs the kibana web ui"
-      $stderr.puts "  rspec - runs tests"
-      #$stderr.puts commands.keys.map { |s| "  #{s}" }.join("\n")
+      $stderr.puts commands.keys.map { |s| "  #{s}" }.join("\n")
       exit 1
     end
 

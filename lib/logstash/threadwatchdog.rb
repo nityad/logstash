@@ -20,11 +20,11 @@ class LogStash::ThreadWatchdog
       @threads.each do |t|
         watchdog = t[:watchdog]
         if watchdog and watchdog <= cutoff
-          age = Time.now - watchdog
+          age = Time.now - t[:watchdog]
           @logger.fatal("thread watchdog timeout",
                         :thread => t,
                         :backtrace => t.backtrace,
-                        :thread_watchdog => watchdog,
+                        :thread_watchdog => t[:watchdog],
                         :age => age,
                         :cutoff => @watchdog_timeout,
                         :state => t[:watchdog_state])

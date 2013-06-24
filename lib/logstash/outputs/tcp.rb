@@ -12,7 +12,7 @@ require "thread"
 class LogStash::Outputs::Tcp < LogStash::Outputs::Base
 
   config_name "tcp"
-  milestone 2
+  plugin_status "beta"
 
   # When mode is `server`, the address to listen on.
   # When mode is `client`, the address to connect to.

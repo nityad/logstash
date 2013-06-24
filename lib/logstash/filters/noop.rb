@@ -4,7 +4,7 @@ require "logstash/namespace"
 # No-op filter. This is used generally for internal/dev testing.
 class LogStash::Filters::NOOP < LogStash::Filters::Base
   config_name "noop"
-  milestone 2
+  plugin_status "beta"
 
   public
   def register

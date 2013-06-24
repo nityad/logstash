@@ -1,5 +1,6 @@
 require "logstash/filters/base"
 require "logstash/namespace"
+require "logstash/time_addon"
 
 # The mutate filter allows you to do general mutations to fields. You
 # can rename, remove, replace, and modify fields in your events.
@@ -7,7 +8,7 @@ require "logstash/namespace"
 # TODO(sissel): Support regexp replacements like String#gsub ?
 class LogStash::Filters::Mutate < LogStash::Filters::Base
   config_name "mutate"
-  milestone 3
+  plugin_status "stable"
 
   # Rename one or more fields.
   #
@@ -30,10 +31,7 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   #         remove => [ "client" ]  # Removes the 'client' field
   #       }
   #     }
-  #
-  # This option is deprecated, instead use remove_field option available in all
-  # filters.
-  config :remove, :validate => :array, :deprecated => true
+  config :remove, :validate => :array
 
   # Replace a field with a new value. The new value can include %{foo} strings
   # to help you build a new value from other parts of the event.
@@ -46,18 +44,6 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   #       }
   #     }
   config :replace, :validate => :hash
-
-  # Update an existing field with a new value. If the field does not exist,
-  # then no action will be taken.
-  #
-  # Example:
-  # 
-  #     filter {
-  #       mutate {
-  #         update => [ "sample", "My new message" ]
-  #       }
-  #     }
-  config :update, :validate => :hash
 
   # Convert a field's value to a different type, like turning a string to an
   # integer. If the field value is an array, all members will be converted.
@@ -88,11 +74,11 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   #       mutate {
   #         gsub => [
   #           # replace all forward slashes with underscore
-  #           "fieldname", "/", "_",
+  #           "fieldname", "\\/", "_",
   #
-  #           # replace backslashes, question marks, hashes, and minuses with
-  #           # dot
-  #           "fieldname2", "[\\?#-]", "."
+  #           # replace backslashes, question marks, hashes and minuses with
+  #           # underscore
+  #           "fieldname", "[\\?#-]", "_"
   #         ]
   #       }
   #     }
@@ -203,7 +189,6 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
     return unless filter?(event)
 
     rename(event) if @rename
-    update(event) if @update
     replace(event) if @replace
     convert(event) if @convert
     gsub(event) if @gsub
@@ -235,16 +220,10 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   end # def rename
 
   private
-  def update(event)
-    @update.each do |field, newvalue|
-      next unless event.include?(field)
-      event[field] = event.sprintf(newvalue)
-    end
-  end # def update
-
-  private
   def replace(event)
+    # TODO(sissel): use event.sprintf on the field names?
     @replace.each do |field, newvalue|
+      next unless event.include?(field)
       event[field] = event.sprintf(newvalue)
     end
   end # def replace
@@ -344,9 +323,6 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
     @split.each do |field, separator|
       if event[field].is_a?(String)
         event[field] = event[field].split(separator)
-      else 
-        @logger.debug("Can't split something that isn't a string",
-                      :field => field, :value => event[field])
       end
     end
   end

@@ -13,7 +13,10 @@ require "logstash/namespace"
 class LogStash::Outputs::Gemfire < LogStash::Outputs::Base
 
   config_name "gemfire"
-  milestone 1
+  plugin_status "experimental"
+
+  # Your client cache name
+  config :name, :validate => :string, :deprecated => true
 
   # Your client cache name
   config :cache_name, :validate => :string, :default => "logstash"
@@ -39,6 +42,14 @@ class LogStash::Outputs::Gemfire < LogStash::Outputs::Base
 
   # A sprintf format to use when building keys
   config :key_format, :validate => :string, :default => "%{@source}-%{@timestamp}"
+
+  if @name
+    if @cache_name
+      @logger.error("'name' and 'cache_name' are the same setting, but 'name' is deprecated. Please use only 'cache_name'")
+    end
+    @cache_name = @name
+  end
+
 
   public
   def register

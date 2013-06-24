@@ -19,7 +19,7 @@ require "logstash/outputs/base"
 class LogStash::Outputs::Exec < LogStash::Outputs::Base
 
   config_name "exec"
-  milestone 1
+  plugin_status "experimental"
 
   # Command line to execute via subprocess. Use dtach or screen to make it non blocking
   config :command, :validate => :string, :required => true

@@ -16,7 +16,7 @@ require "logstash/namespace"
 class LogStash::Filters::ZeroMQ < LogStash::Filters::Base
 
   config_name "zeromq"
-  milestone 1
+  plugin_status "experimental"
 
   # 0mq socket address to connect or bind
   # Please note that inproc:// will not work with logstash

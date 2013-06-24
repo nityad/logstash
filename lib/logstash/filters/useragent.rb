@@ -12,24 +12,19 @@ require "tempfile"
 # <https://github.com/tobie/ua-parser/>.
 class LogStash::Filters::UserAgent < LogStash::Filters::Base
   config_name "useragent"
-  milestone 1
+  plugin_status "experimental"
 
   # The field containing the user agent string. If this field is an
   # array, only the first value will be used.
   config :source, :validate => :string, :required => true
 
-  # The name of the field to assign user agent data into.
-  #
-  # If not specified user agent data will be stored in the root of the event.
-  config :target, :validate => :string
+  # The name of the field to assign the UA data hash to
+  config :target, :validate => :string, :default => "ua"
 
   # regexes.yaml file to use
   #
   # If not specified, this will default to the regexes.yaml that ships
   # with logstash.
-  #
-  # You can find the latest version of this here:
-  # <https://github.com/tobie/ua-parser/blob/master/regexes.yaml>
   config :regexes, :validate => :string
 
   public
@@ -40,14 +35,12 @@ class LogStash::Filters::UserAgent < LogStash::Filters::Base
         @parser = UserAgentParser::Parser.new()
       rescue Exception => e
         begin
-          if __FILE__ =~ /file:\/.*\.jar!/
-            # Running from a flatjar which has a different layout
-            regexes_file = [__FILE__.split("!").first, "/vendor/ua-parser/regexes.yaml"].join("!")
-            @parser = UserAgentParser::Parser.new(:patterns_path => regexes_file)
-          else
-            # assume operating from the git checkout
-            @parser = UserAgentParser::Parser.new(:patterns_path => "vendor/ua-parser/regexes.yaml")
-          end
+          # Running from a flatjar which has a different layout
+          jar_path = [__FILE__.split("!").first, "/vendor/ua-parser/regexes.yaml"].join("!")
+          tmp_file = Tempfile.new('logstash-uaparser-regexes')
+          tmp_file.write(File.read(jar_path))
+          tmp_file.close # this file is reaped when ruby exits
+          @parser = UserAgentParser::Parser.new(:patterns_path => tmp_file.path)
         rescue => ex
           raise "Failed to cache, due to: #{ex}\n#{ex.backtrace}"
         end
@@ -73,24 +66,18 @@ class LogStash::Filters::UserAgent < LogStash::Filters::Base
     end
 
     if !ua_data.nil?
-      if @target.nil?
-        # default write to the root of the event
-        target = event
-      else
-        target = event[@target] ||= {}
-      end
+        event[@target] = {} if event[@target].nil?
 
-      target["name"] = ua_data.name
-      target["os"] = ua_data.os.to_s if not ua_data.os.nil?
-      target["device"] = ua_data.device.to_s if not ua_data.device.nil?
+        event[@target]["name"] = ua_data.name
+        event[@target]["os"] = ua_data.os if not ua_data.os.nil?
+        event[@target]["device"] = ua_data.device if not ua_data.device.nil?
 
-      if not ua_data.version.nil?
-        ua_version = ua_data.version
-        target["major"] = ua_version.major
-        target["minor"] = ua_version.minor
-        target["patch"] = ua_version.patch if ua_version.patch
-        target["build"] = ua_version.patch_minor if ua_version.patch_minor 
-      end
+        if not ua_data.version.nil?
+          ua_version = ua_data.version
+
+          event[@target]["major"] = ua_version.major
+          event[@target]["minor"] = ua_version.minor
+        end
 
       filter_matched(event)
     end

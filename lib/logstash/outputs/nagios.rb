@@ -47,7 +47,7 @@ require "logstash/outputs/base"
 class LogStash::Outputs::Nagios < LogStash::Outputs::Base
 
   config_name "nagios"
-  milestone 2
+  plugin_status "beta"
 
   # The path to your nagios command file
   config :commandfile, :validate => :path, :default => "/var/lib/nagios3/rw/nagios.cmd"

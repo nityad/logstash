@@ -11,7 +11,7 @@ require "yaml"
 class LogStash::Filters::Checksum < LogStash::Filters::Base
 
   config_name "checksum"
-  milestone 1
+  plugin_status "experimental"
 
   # A list of keys to use in creating the string to checksum
   # Keys will be sorted before building the string
@@ -43,4 +43,4 @@ class LogStash::Filters::Checksum < LogStash::Filters::Base
     @logger.debug("Digested string", :digested_string => digested_string)
     event.fields['logstash_checksum'] = digested_string
   end
-end # class LogStash::Filters::Checksum
+end

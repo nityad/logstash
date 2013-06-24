@@ -1,15 +1,14 @@
 require "test_utils"
 require "logstash/filters/date"
 
-puts "Skipping date performance tests because this ruby is not jruby" if RUBY_ENGINE != "jruby"
-RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
+describe LogStash::Filters::Date do
   extend LogStash::RSpec
 
   describe "parsing with ISO8601" do
     config <<-CONFIG
       filter {
         date {
-          match => [ "mydate", "ISO8601" ]
+          mydate => "ISO8601"
         }
       }
     CONFIG
@@ -32,16 +31,11 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
       "2001-11-06T20:45:45.123-0000"     => "2001-11-06T20:45:45.123Z",
       "2001-12-07T23:54:54.123Z"         => "2001-12-07T23:54:54.123Z",
     }
-
     times.each do |input, output|
-      sample("mydate" => input) do
-        begin 
-          insist { subject["mydate"] } == input
-          insist { subject["@timestamp"] } == Time.iso8601(output).utc
-        rescue
-          require "pry"; binding.pry
-          raise
-        end
+      sample({"@fields" => {"mydate" => input}}) do
+        insist { subject["mydate"] } == input
+        insist { subject.timestamp } == output
+        insist { subject["@timestamp"] } == output
       end
     end # times.each
   end
@@ -50,7 +44,7 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
     config <<-CONFIG
       filter {
         date {
-          match => [ "mydate", "MMM dd HH:mm:ss Z" ]
+          mydate => "MMM dd HH:mm:ss Z"
         }
       }
     CONFIG
@@ -63,9 +57,10 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
       "Nov 24 01:29:01 -0800" => "#{year}-11-24T09:29:01.000Z",
     }
     times.each do |input, output|
-      sample("mydate" => input) do
+      sample({"@fields" => {"mydate" => input}}) do
         insist { subject["mydate"] } == input
-        insist { subject["@timestamp"] } == Time.iso8601(output).utc
+        insist { subject.timestamp } == output
+        insist { subject["@timestamp"] } == output
       end
     end # times.each
   end
@@ -74,7 +69,7 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
     config <<-CONFIG
       filter {
         date {
-          match => [ "mydate", "UNIX" ]
+          mydate => "UNIX"
         }
       }
     CONFIG
@@ -88,9 +83,10 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
       1000000000 => "2001-09-09T01:46:40.000Z"
     }
     times.each do |input, output|
-      sample("mydate" => input) do
+      sample({"@fields" => {"mydate" => input}}) do
         insist { subject["mydate"] } == input
-        insist { subject["@timestamp"] } == Time.iso8601(output).utc
+        insist { subject.timestamp } == output
+        insist { subject["@timestamp"] } == output
       end
     end # times.each
   end
@@ -99,14 +95,13 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
     config <<-CONFIG
       filter {
         date {
-          match => [ "mydate", "UNIX" ]
+          mydate => "UNIX"
         }
       }
     CONFIG
 
-    sample("mydate" => "1350414944.123456") do
-      # Joda time only supports milliseconds :\
-      insist { subject.timestamp } == Time.iso8601("2012-10-16T12:15:44.123-07:00").utc
+    sample({"@fields" => {"mydate" => "1350414944.123456"}}) do
+      insist { subject.timestamp } == "2012-10-16T19:15:44.123Z"
     end
   end
 
@@ -114,7 +109,7 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
     config <<-CONFIG
       filter {
         date {
-          match => [ "mydate", "UNIX_MS" ]
+          mydate => "UNIX_MS"
         }
       }
     CONFIG
@@ -130,9 +125,10 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
       1000000000123 => "2001-09-09T01:46:40.123Z"
     }
     times.each do |input, output|
-      sample("mydate" => input) do
+      sample({"@fields" => {"mydate" => input}}) do
         insist { subject["mydate"] } == input
-        insist { subject["@timestamp"] } == Time.iso8601(output)
+        insist { subject.timestamp } == output
+        insist { subject["@timestamp"] } == output
       end
     end # times.each
   end
@@ -142,8 +138,8 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
       input {
         generator {
           lines => [
-            '{ "mydate": "this will not parse" }',
-            '{ }'
+            '{ "@fields": { "mydate": "this will not parse" } }',
+            '{ "@fields": { } }'
           ]
           format => json_event
           type => foo
@@ -152,7 +148,7 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
       }
       filter {
         date {
-          match => [ "mydate", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
+          mydate => [ "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
         }
       }
       output { 
@@ -169,20 +165,20 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
     config <<-'CONFIG'
       filter {
         date {
-          match => [ "t",  TAI64N ]
+          t => TAI64N
         }
       }
     CONFIG
 
     # Try without leading "@"
-    sample("t" => "4000000050d506482dbdf024") do
-      insist { subject.timestamp } == Time.iso8601("2012-12-22T01:00:46.767Z").utc
+    sample({ "@fields" => { "t" => "4000000050d506482dbdf024" } }) do
+      insist { subject.timestamp } == "2012-12-22T01:00:46.767Z"
     end
 
     # Should still parse successfully if it's a full tai64n time (with leading
     # '@')
-    sample("t" => "@4000000050d506482dbdf024") do
-      insist { subject.timestamp } == Time.iso8601("2012-12-22T01:00:46.767Z").utc
+    sample({ "@fields" => { "t" => "@4000000050d506482dbdf024" } }) do
+      insist { subject.timestamp } == "2012-12-22T01:00:46.767Z"
     end
   end
 
@@ -197,9 +193,10 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
 
     time = "2001-09-09T01:46:40.000Z"
 
-    sample("mydate" => time) do
+    sample({"@fields" => {"mydate" => time}}) do
       insist { subject["mydate"] } == time
-      insist { subject["@timestamp"] } == Time.iso8601(time).utc
+      insist { subject.timestamp } == time
+      insist { subject["@timestamp"] } == time
     end
   end
   
@@ -207,65 +204,27 @@ RUBY_ENGINE == "jruby" and describe LogStash::Filters::Date do
     config <<-CONFIG
       filter { 
         date {
-          match => [ "[data][deep]", "ISO8601" ]
+          match => [ "data.deep", "ISO8601" ]
         }
       }
     CONFIG
     
-    sample("data" => { "deep" => "2013-01-01T00:00:00.000Z" }) do
-      insist { subject["@timestamp"] } == Time.iso8601("2013-01-01T00:00:00.000Z").utc
+    sample({ "@fields" => { "data" => { "deep" => "2013-01-01T00:00:00.000Z" } } }) do
+      insist { subject["@timestamp"] } == "2013-01-01T00:00:00.000Z"
     end
   end
 
-  describe "failing to parse should not throw an exception" do
+  describe "support deep field access" do
     config <<-CONFIG
       filter { 
         date {
-          match => [ "thedate", "yyyy/MM/dd" ]
+          match => [ "data\\.deep", "ISO8601" ]
         }
       }
     CONFIG
 
-    sample("thedate" => "2013/Apr/21") do
-      insist { subject["@timestamp"] } != "2013-04-21T00:00:00.000Z"
+    sample({ "@fields" => { "data.deep" => "2013-01-01T00:00:00.000Z" } }) do
+      insist { subject["@timestamp"] } == "2013-01-01T00:00:00.000Z"
     end
   end
-
-  describe "parsing with timezone parameter" do
-    config <<-CONFIG
-      filter {
-        date {
-          match => ["mydate", "yyyy MMM dd HH:mm:ss"]
-          timezone => "America/Los_Angeles"
-        }
-      }
-    CONFIG
-
-    require 'java'
-    times = {
-      "2013 Nov 24 01:29:01" => "2013-11-24T09:29:01.000Z",
-      "2013 Jun 24 01:29:01" => "2013-06-24T08:29:01.000Z",
-    }
-    times.each do |input, output|
-      sample("mydate" => input) do
-        insist { subject["mydate"] } == input
-        insist { subject["@timestamp"] } == Time.iso8601(output).utc
-      end
-    end # times.each
-  end
-
-  describe "LOGSTASH-34 - Default year should be this year" do
-    config <<-CONFIG
-      filter {
-        date {
-          match => [ "message", "EEE MMM dd HH:mm:ss" ]
-        }
-      }
-    CONFIG
-
-    sample "Sun Jun 02 20:38:03" do
-      insist { subject["@timestamp"].year } == Time.now.year
-    end
-  end
-
 end

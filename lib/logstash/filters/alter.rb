@@ -9,7 +9,7 @@ require "logstash/namespace"
 # be merged into the 'mutate' filter in future versions.
 class LogStash::Filters::Alter < LogStash::Filters::Base
   config_name "alter"
-  milestone 1
+  plugin_status "experimental"
   
   # Change the content of the field to the specified value
   # if the actual content is equal to the expected one.
@@ -169,4 +169,4 @@ class LogStash::Filters::Alter < LogStash::Filters::Base
     end # @coalesce_parsed.each
   end # def coalesce
   
-end # class LogStash::Filters::Alter
+end

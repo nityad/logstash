@@ -5,7 +5,7 @@ require "socket"
 # Read events over the websocket protocol.
 class LogStash::Inputs::Websocket < LogStash::Inputs::Base
   config_name "websocket"
-  milestone 1
+  plugin_status "experimental"
 
   # The url to connect to or serve from
   config :url, :validate => :string, :default => "0.0.0.0"
@@ -44,4 +44,4 @@ class LogStash::Inputs::Websocket < LogStash::Inputs::Base
     end # begin
   end # def run
 
-end # class LogStash::Inputs::Websocket
+end # class LogStash::Inputs::Udp

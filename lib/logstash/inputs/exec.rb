@@ -13,7 +13,7 @@ require "socket" # for Socket.gethostname
 class LogStash::Inputs::Exec < LogStash::Inputs::Base
 
   config_name "exec"
-  milestone 2
+  plugin_status "beta"
   
   # Set this to true to enable debugging on an input.
   config :debug, :validate => :boolean, :default => false
@@ -37,12 +37,10 @@ class LogStash::Inputs::Exec < LogStash::Inputs::Base
       @logger.info("Running exec", :command => @command) if @debug
       out = IO.popen(@command)
       # out.read will block until the process finishes.
-      @codec.decode(out.read) do |event|
-        event["source"] = "exec://#{Socket.gethostname}"
-        event["command"] = @command
-        queue << event
-      end
-      
+      e = to_event(out.read, "exec://#{Socket.gethostname}/")
+      e["command"] = @command
+      queue << e
+
       duration = Time.now - start
       if @debug
         @logger.info("Command completed", :command => @command,

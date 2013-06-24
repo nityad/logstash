@@ -13,12 +13,7 @@ class LogStash::Logger
     #subscribe(::Logger.new(*args))
     @target = args[0]
     @channel = Cabin::Channel.get(LogStash)
-
-    # lame hack until cabin's smart enough not to doubley-subscribe something.
-    # without this subscription count check, running the test suite
-    # causes Cabin to subscribe to STDOUT maaaaaany times.
-    subscriptions = @channel.instance_eval { @subscribers.count }
-    @channel.subscribe(@target) unless subscriptions > 0
+    @channel.subscribe(@target)
  
     # Set default loglevel to WARN unless $DEBUG is set (run with 'ruby -d')
     @level = $DEBUG ? :debug : :warn
@@ -43,13 +38,13 @@ class LogStash::Logger
   def fatal(*args); @channel.fatal(*args); end
   def fatal?(*args); @channel.fatal?(*args); end
 
-  def self.setup_log4j(logger)
+  def setup_log4j(logger="")
     require "java"
 
     #p = java.util.Properties.new(java.lang.System.getProperties())
     p = java.util.Properties.new
     log4j_level = "WARN"
-    case logger.level
+    case @channel.level
       when :debug
         log4j_level = "DEBUG"
       when :info
@@ -59,9 +54,6 @@ class LogStash::Logger
     end # case level
     p.setProperty("log4j.rootLogger", "#{log4j_level},logstash")
 
-    # TODO(sissel): This is a shitty hack to work around the fact that
-    # LogStash::Logger isn't used anymore. We should fix that.
-    target = logger.instance_eval { @subscribers }.values.first.instance_eval { @io }
     case target
       when STDOUT
         p.setProperty("log4j.appender.logstash",
@@ -84,6 +76,6 @@ class LogStash::Logger
 
     org.apache.log4j.LogManager.resetConfiguration
     org.apache.log4j.PropertyConfigurator.configure(p)
-    logger.debug("log4j java properties setup", :log4j_level => log4j_level)
+    debug("log4j java properties setup", :log4j_level => log4j_level)
   end
 end # class LogStash::Logger
