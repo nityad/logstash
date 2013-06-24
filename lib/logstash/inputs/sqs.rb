@@ -56,18 +56,18 @@ require "logstash/plugin_mixins/aws_config"
 #
 class LogStash::Inputs::SQS < LogStash::Inputs::Threadable
   include LogStash::PluginMixins::AwsConfig
-  
+
   config_name "sqs"
-  plugin_status "experimental"
-
-  # The `access_key` option is deprecated, please update your configuration to use `access_key_id` instead
-  config :access_key, :validate => :string, :deprecated => true
-
-  # The `secret_key` option is deprecated, please update your configuration to use `secret_access_key` instead
-  config :secret_key, :validate => :string, :deprecated => true
+  milestone 1
 
   # Name of the SQS Queue name to pull messages from. Note that this is just the name of the queue, not the URL or ARN.
   config :queue, :validate => :string, :required => true
+
+  # Name of the event field in which to store the SQS message ID
+  config :id_field, :validate => :string
+
+  # Name of the event field in which to store the SQS message MD5 checksum
+  config :md5_field, :validate => :string
 
   public
   def aws_service_endpoint(region)
@@ -86,12 +86,6 @@ class LogStash::Inputs::SQS < LogStash::Inputs::Threadable
     @logger.info("Registering SQS input", :queue => @queue)
     require "aws-sdk"
 
-    # This should be removed when the deprecated aws credential options are removed
-    if (@access_key && @secret_key)
-      @access_key_id = @access_key
-      @secret_access_key = @secret_key
-    end
-    
     @sqs = AWS::SQS.new(aws_options_hash)
 
     begin
@@ -107,10 +101,10 @@ class LogStash::Inputs::SQS < LogStash::Inputs::Threadable
   public
   def run(output_queue)
     @logger.debug("Polling SQS queue", :queue => @queue)
-    
+
     receive_opts = {
-      :limit => 10,
-      :visibility_timeout => 30
+        :limit => 10,
+        :visibility_timeout => 30
     }
 
     continue_polling = true
@@ -120,6 +114,12 @@ class LogStash::Inputs::SQS < LogStash::Inputs::Threadable
           if message
             e = to_event(message.body, @sqs_queue)
             if e
+              if @id_field
+                e[@id_field] = message.id
+              end
+              if @md5_field
+                e[@md5_field] = message.md5
+              end
               @logger.debug("Processed SQS message", :message_id => message.id, :message_md5 => message.md5, :queue => @queue)
               output_queue << e
               message.delete
@@ -147,7 +147,7 @@ class LogStash::Inputs::SQS < LogStash::Inputs::Threadable
       @logger.error("AWS::EC2::Errors::RequestLimitExceeded ... failed.", :queue => @queue)
       return false
     end # retry limit exceeded
-    
+
     begin
       block.call
     rescue AWS::EC2::Errors::RequestLimitExceeded

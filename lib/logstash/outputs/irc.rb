@@ -7,7 +7,7 @@ require "thread"
 class LogStash::Outputs::Irc < LogStash::Outputs::Base
 
   config_name "irc"
-  plugin_status "experimental"
+  milestone 1
 
   # Address of the host to connect to
   config :host, :validate => :string, :required => true
@@ -36,6 +36,12 @@ class LogStash::Outputs::Irc < LogStash::Outputs::Base
   # Message format to send, event tokens are usable here
   config :format, :validate => :string, :default => "%{@message}"
 
+  # Set this to true to enable SSL.
+  config :secure, :validate => :boolean, :default => false
+
+  # Limit the rate of messages sent to IRC in messages per second.
+  config :messages_per_second, :validate => :number, :default => 0.5
+
   public
   def register
     require "cinch"
@@ -51,7 +57,9 @@ class LogStash::Outputs::Irc < LogStash::Outputs::Base
       c.user = @user
       c.realname = @real
       c.channels = @channels
-      c.password = @password
+      c.password = @password.value rescue nil
+      c.ssl.use = @secure
+      c.messages_per_second = @messages_per_second if @messages_per_second
     end
     Thread.new(@bot) do |bot|
       bot.start

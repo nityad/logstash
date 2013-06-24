@@ -1,14 +1,13 @@
 require "date"
 require "logstash/inputs/base"
 require "logstash/namespace"
-require "logstash/time_addon" # should really use the filters/date.rb bits
 require "socket"
 
 # Read messages as events over the network via udp.
 #
 class LogStash::Inputs::Udp < LogStash::Inputs::Base
   config_name "udp"
-  plugin_status "beta"
+  milestone 2
 
   # The address to listen on
   config :host, :validate => :string, :default => "0.0.0.0"

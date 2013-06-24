@@ -9,7 +9,7 @@ require "socket" # for Socket.gethostname
 # An event is generated first
 class LogStash::Inputs::Generator < LogStash::Inputs::Threadable
   config_name "generator"
-  plugin_status "beta"
+  milestone 3
 
   # The message string to use in the event.
   #
@@ -43,18 +43,17 @@ class LogStash::Inputs::Generator < LogStash::Inputs::Threadable
   # Set how many messages should be generated.
   #
   # The default, 0, means generate an unlimited number of events.
-  config :count, :validate => :integer, :default => 0
+  config :count, :validate => :number, :default => 0
 
   public
   def register
     @host = Socket.gethostname
-
-    if @count.is_a?(Array)
-      @count = @count.first
-    end
+    @count = @count.first if @count.is_a?(Array)
+    @lines = [@message] if @lines.nil?
   end # def register
 
   def run(queue)
+
     number = 0
     source = "generator://#{@host}/"
 
@@ -65,23 +64,31 @@ class LogStash::Inputs::Generator < LogStash::Inputs::Threadable
     end
 
     while !finished? && (@count <= 0 || number < @count)
-      if @lines
-        @lines.each do |line|
-          event = to_event(line, source)
+      @lines.each do |line|
+        @codec.decode(line.clone) do |event|
+          event["source"] = source
           event["sequence"] = number
           queue << event
         end
-      else
-        event = to_event(@message, source)
-        event["sequence"] = number
-        queue << event
       end
       number += 1
     end # loop
+
+    if @codec.respond_to?(:flush)
+      @codec.flush do |event|
+        event["source"] = source
+        queue << event
+      end
+    end
+    sleep 3
   end # def run
 
   public
   def teardown
+    @codec.flush do |event|
+      event["source"] = source
+      queue << event
+    end
     finished
   end # def teardown
-end # class LogStash::Inputs::Stdin
+end # class LogStash::Inputs::Generator

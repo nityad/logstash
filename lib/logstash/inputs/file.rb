@@ -13,7 +13,7 @@ require "socket" # for Socket.gethostname
 # is detected and handled by this input.
 class LogStash::Inputs::File < LogStash::Inputs::Base
   config_name "file"
-  plugin_status "beta"
+  milestone 2
 
   # The path to the file to use as an input.
   # You can use globs here, such as `/var/log/*.log`
@@ -39,8 +39,8 @@ class LogStash::Inputs::File < LogStash::Inputs::Base
   config :discover_interval, :validate => :number, :default => 15
 
   # Where to write the since database (keeps track of the current
-  # position of monitored log files). Defaults to the value of
-  # environment variable "$SINCEDB_PATH" or "$HOME/.sincedb".
+  # position of monitored log files). The default will write
+  # sincedb files to some path matching "$HOME/.sincedb*"
   config :sincedb_path, :validate => :string
 
   # How often to write a since database with the current position of
@@ -58,17 +58,6 @@ class LogStash::Inputs::File < LogStash::Inputs::Base
   config :start_position, :validate => [ "beginning", "end"], :default => "end"
 
   public
-  def initialize(params)
-    super
-    
-    @path.each do |path|
-      if Pathname.new(path).relative?
-        raise ArgumentError.new("File paths must be absolute, relative path specified: #{path}")
-      end
-    end
-  end
-
-  public
   def register
     require "addressable/uri"
     require "filewatch/tail"
@@ -84,22 +73,31 @@ class LogStash::Inputs::File < LogStash::Inputs::Base
       :logger => @logger,
     }
 
+    @path.each do |path|
+      if Pathname.new(path).relative?
+        raise ArgumentError.new("File paths must be absolute, relative path specified: #{path}")
+      end
+    end
+
     if @sincedb_path.nil?
-      if ENV["HOME"].nil?
-        @logger.error("No HOME environment variable set, I don't know where " \
+      if ENV["SINCEDB_DIR"].nil? && ENV["HOME"].nil?
+        @logger.error("No SINCE_DB or HOME environment variable set, I don't know where " \
                       "to keep track of the files I'm watching. Either set " \
-                      "HOME in your environment, or set sincedb_path in " \
+                      "HOME or SINCEDB_DIR in your environment, or set sincedb_path in " \
                       "in your logstash config for the file input with " \
                       "path '#{@path.inspect}'")
         raise # TODO(sissel): HOW DO I FAIL PROPERLY YO
       end
 
+      #pick SINCEDB_DIR if available, otherwise use HOME
+      sincedb_dir = EVN["SINCEDB_DIR"] || ENV["HOME"]
+
       # Join by ',' to make it easy for folks to know their own sincedb
       # generated path (vs, say, inspecting the @path array)
-      @sincedb_path = File.join(ENV["HOME"], ".sincedb_" + Digest::MD5.hexdigest(@path.join(",")))
+      @sincedb_path = File.join(sincedb_dir, ".sincedb_" + Digest::MD5.hexdigest(@path.join(",")))
 
       # Migrate any old .sincedb to the new file (this is for version <=1.1.1 compatibility)
-      old_sincedb = File.join(ENV["HOME"], ".sincedb")
+      old_sincedb = File.join(sincedb_dir, ".sincedb")
       if File.exists?(old_sincedb)
         @logger.info("Renaming old ~/.sincedb to new one", :old => old_sincedb,
                      :new => @sincedb_path)
@@ -125,11 +123,11 @@ class LogStash::Inputs::File < LogStash::Inputs::Base
     hostname = Socket.gethostname
 
     @tail.subscribe do |path, line|
-      source = Addressable::URI.new(:scheme => "file", :host => hostname, :path => path).to_s
-      @logger.debug("Received line", :path => path, :line => line)
-      e = to_event(line, source)
-      if e
-        queue << e
+      #source = Addressable::URI.new(:scheme => "file", :host => hostname, :path => path).to_s
+      source = "file://#{hostname}/#{path.gsub("\\","/")}"
+      @logger.debug? && @logger.debug("Received line", :path => path, :line => line)
+      @codec.decode(line) do |event|
+        event["source"] = source
       end
     end
     finished
