@@ -14,9 +14,9 @@ class LogStash::Filters::Sflychecksum < LogStash::Filters::Base
   plugin_status "beta"
   # A list of keys to use in creating the string to checksum
   # Keys will be sorted before building the string
-  # keys and values will then be concatenated with pipe delimeters
+  # keys and values will then be concatenated with pipe delimetersn
   # and checksummed
-  config :keys, :validate => :array, :default => []
+  config :keys, :validate => :hash, :default => {}
 
   config :algorithm, :validate => ["md5", "sha128", "sha256", "sha384"], :default => "sha256"
 
@@ -29,11 +29,21 @@ class LogStash::Filters::Sflychecksum < LogStash::Filters::Base
   def filter(event)
     return unless filter?(event)
 
-    @logger.debug("Running sflychecksum filter", :event => event)
+    @logger.debug("Running checksum filter", :event => event)
     @to_checksum = ""
-    @keys.each do |k|
-      @logger.debug("Adding key to string", :current_key => k)
-      @to_checksum << "#{event[k]}"
+    pattern = /\w*\d[\d\w]*/
+    @keys.each do |k, value|
+      @logger.debug("Current key and value", :current_key => k, :current_value => value)
+      cur = event[k]
+      @logger.debug("current value", :current_value => cur)
+      if value and !cur.nil?
+        if cur.kind_of?(Array)
+          cur = cur.join(" ")
+        end
+        @logger.debug("patterned")
+        cur = cur.gsub(pattern, "*")
+      end
+      @to_checksum << "#{cur} "
     event["@signature"] = @to_checksum
     end
     @logger.debug("Final string built", :to_checksum => @to_checksum)
@@ -41,4 +51,4 @@ class LogStash::Filters::Sflychecksum < LogStash::Filters::Base
     @logger.debug("Digested string", :digested_string => digested_string)
     event['@checksum'] = digested_string
   end
-end # class LogStash::Filters::Sflychecksum
+end # class LogStash::Filters::Checksum

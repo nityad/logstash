@@ -13,3 +13,5 @@ vendor
 data
 .buildpath
 .project
+
+*.orig
