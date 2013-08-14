@@ -25,6 +25,10 @@ class LogStash::Filters::Sflychecksum < LogStash::Filters::Base
     require 'openssl'
   end
 
+  def to_boolean(str)
+      str == 'true'
+  end
+  
   public
   def filter(event)
     return unless filter?(event)
@@ -36,11 +40,11 @@ class LogStash::Filters::Sflychecksum < LogStash::Filters::Base
       @logger.debug("Current key and value", :current_key => k, :current_value => value)
       cur = event[k]
       @logger.debug("current value", :current_value => cur)
-      if value and !cur.nil?
+      if to_boolean(value) and !cur.nil?
         if cur.kind_of?(Array)
           cur = cur.join(" ")
         end
-        @logger.debug("patterned")
+        @logger.debug("current pattern", :current_pattern => cur)
         cur = cur.gsub(pattern, "*")
       end
       @to_checksum << "#{cur} "
@@ -51,4 +55,4 @@ class LogStash::Filters::Sflychecksum < LogStash::Filters::Base
     @logger.debug("Digested string", :digested_string => digested_string)
     event['@checksum'] = digested_string
   end
-end # class LogStash::Filters::Checksum
+end # class LogStash::Filters::Sflychecksum
