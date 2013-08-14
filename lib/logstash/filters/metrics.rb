@@ -10,7 +10,7 @@ require "logstash/namespace"
 #     filter {
 #       metrics {
 #         meter => [ "http.%{response}" ]
-#         add_tag => metric
+#         add_tag => "metric"
 #       }
 #     }
 #
@@ -93,13 +93,29 @@ require "logstash/namespace"
 #     }
 class LogStash::Filters::Metrics < LogStash::Filters::Base
   config_name "metrics"
-  plugin_status "experimental"
+  milestone 1
 
-  # syntax: meter => [ "name of metric", "name of metric" ]
+  # syntax: `meter => [ "name of metric", "name of metric" ]`
   config :meter, :validate => :array, :default => []
 
-  # syntax: timer => [ "name of metric", "%{time_value}" ]
+  # syntax: `timer => [ "name of metric", "%{time_value}" ]`
   config :timer, :validate => :hash, :default => {}
+
+  # Don't track events that have @timestamp older than some number of seconds. 
+  #
+  # This is useful if you want to only include events that are near real-time
+  # in your metrics.
+  #
+  # Example, to only count events that are within 10 seconds of real-time, you 
+  # would do this:
+  #
+  #     filter {
+  #       metrics {
+  #         meter => [ "hits" ]
+  #         ignore_older_than => 10
+  #       }
+  #     }
+  config :ignore_older_than, :validate => :number, :default => 0
 
   def register
     require "metriks"
@@ -111,6 +127,12 @@ class LogStash::Filters::Metrics < LogStash::Filters::Base
 
   def filter(event)
     return unless filter?(event)
+
+    # TODO(piavlo): This should probably be moved to base filter class.
+    if @ignore_older_than > 0 && Time.now - event.ruby_timestamp > @ignore_older_than
+      @logger.debug("Skipping metriks for old event", :event => event)
+      return
+    end
 
     @meter.each do |m|
       @metric_meters[event.sprintf(m)].mark
@@ -160,4 +182,4 @@ class LogStash::Filters::Metrics < LogStash::Filters::Base
     filter_matched(event)
     return [event]
   end
-end # class LogStash::Filter::KV
+end # class LogStash::Filters::Metrics

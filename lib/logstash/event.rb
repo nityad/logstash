@@ -1,40 +1,63 @@
 require "json"
 require "time"
 require "date"
-require "logstash/time_addon"
 require "logstash/namespace"
-require "uri"
+require "logstash/util/fieldreference"
 
-# General event type. 
-# Basically a light wrapper on top of a hash.
+# Use a custom serialization for jsonifying Time objects.
+# TODO(sissel): Put this in a separate file.
+class Time
+  def to_json(*args)
+    return iso8601(3).to_json(*args)
+  end
+end
+
+# the logstash event object.
 #
-# TODO(sissel): properly handle lazy properties like parsed time formats, urls,
-# etc, as necessary.
+# An event is simply a tuple of (timestamp, data).
+# The 'timestamp' is an ISO8601 timestamp. Data is anything - any message,
+# context, references, etc that are relevant to this event.
+#
+# Internally, this is represented as a hash with only two guaranteed fields.
+#
+# * "@timestamp" - an ISO8601 timestamp representing the time the event
+#   occurred at.
+# * "@version" - the version of the schema. Currently "1"
+#
+# They are prefixed with an "@" symbol to avoid clashing with your
+# own custom fields. 
+#
+# When serialized, this is represented in JSON. For example:
+#
+#     {
+#       "@timestamp": "2013-02-09T20:39:26.234Z",
+#       "@version": "1",
+#       message: "hello world"
+#     }
 class LogStash::Event
+  class DeprecatedMethod < StandardError; end
+
   public
-  def initialize(data=nil)
+  def initialize(data={})
     @cancelled = false
 
-    @data = {
-      "@source" => "unknown",
-      "@tags" => [],
-      "@fields" => {},
-    }
-    @data.merge!(data) unless data.nil?
-    @data["@timestamp"] ||= LogStash::Time.now
+    @data = data
+    @data["@timestamp"] = ::Time.now.utc if !@data.include?("@timestamp")
+    @data["@version"] = "1" if !@data.include?("@version")
   end # def initialize
 
-  if defined?(RUBY_ENGINE) && RUBY_ENGINE == "jruby"
-    @@date_parser = Java::org.joda.time.format.ISODateTimeFormat.dateTimeParser.withOffsetParsed
-  else
-    # TODO(sissel): LOGSTASH-217
-    @@date_parser ||= nil
-  end
-
+  # Add class methods on inclusion.
   public
-  def self.from_json(json)
-    return LogStash::Event.new(JSON.parse(json))
-  end # def self.from_json
+  def self.included(klass)
+    klass.extend(ClassMethods)
+  end # def included
+
+  module ClassMethods
+    public
+    def from_json(json)
+      return self.new(JSON.parse(json))
+    end # def from_json
+  end
 
   public
   def cancel
@@ -54,127 +77,89 @@ class LogStash::Event
   # Create a deep-ish copy of this event.
   public
   def clone
-    newdata = @data.clone
-    newdata["@fields"] = {}
-    fields.each do |k,v|
-      newdata["@fields"][k] = v.clone
+    copy = {}
+    @data.each do |k,v|
+      # TODO(sissel): Recurse if this is a hash/array?
+      copy[k] = v.clone
     end
-    return LogStash::Event.new(newdata)
+    return self.class.new(copy)
   end # def clone
 
-  public
-  def to_s
-    return self.sprintf("%{@timestamp} %{@source}: %{@message}")
-  end # def to_s
-
-  public
-  def timestamp; @data["@timestamp"]; end # def timestamp
-  def timestamp=(val); @data["@timestamp"] = val; end # def timestamp=
-
-  public
-  def unix_timestamp
-    if RUBY_ENGINE != "jruby"
-      # This is really slow. See LOGSTASH-217
-      # For some reason, ::Time.parse isn't present even after 'require "time"'
-      # so use DateTime.parse
-      return ::DateTime.parse(timestamp).to_time.to_f
-    else
-      time = @@date_parser.parseDateTime(timestamp)
-      return time.getMillis.to_f / 1000
-    end
+  if RUBY_ENGINE == "jruby"
+    public
+    def to_s
+      return self.sprintf("%{+yyyy-MM-dd'T'HH:mm:ss.SSSZ} %{source} %{message}")
+    end # def to_s
+  else
+    public
+    def to_s
+      return self.sprintf("#{self["@timestamp"].iso8601} %{source} %{message}")
+    end # def to_s
   end
 
+  public
+  def timestamp; return @data["@timestamp"]; end # def timestamp
+  def timestamp=(val); return @data["@timestamp"] = val; end # def timestamp=
+
+  def unix_timestamp
+    raise DeprecatedMethod
+  end # def unix_timestamp
+
   def ruby_timestamp
-    return ::DateTime.parse(timestamp).to_time
-  end  
+    raise DeprecatedMethod
+  end # def unix_timestamp
   
-  
-  public
-  def source; @data["@source"]; end # def source
-  def source=(val)
-    uri = URI.parse(val) rescue nil
-    val = uri if uri
-    if val.is_a?(URI)
-      @data["@source"] = val.to_s
-      @data["@source_host"] = val.host if @data["@source_host"].nil?
-      @data["@source_path"] = val.path
-    else
-      @data["@source"] = val
-    end
-  end # def source=
-
-  public
-  def source_host; @data["@source_host"]; end # def source_host
-  def source_host=(val); @data["@source_host"] = val; end # def source_host=
-
-  public
-  def source_path; @data["@source_path"]; end # def source_path
-  def source_path=(val); @data["@source_path"] = val; end # def source_path=
-
-  public
-  def message; @data["@message"]; end # def message
-  def message=(val); @data["@message"] = val; end # def message=
-
-  public
-  def type; @data["@type"]; end # def type
-  def type=(val); @data["@type"] = val; end # def type=
-
-  public
-  def tags; @data["@tags"]; end # def tags
-  def tags=(val); @data["@tags"] = val; end # def tags=
-
-  def id; @data["@id"]; end # def id
-  def id=(val); @data["@id"] = val; end # def id=
-
   # field-related access
   public
-  def [](key)
-    # If the key isn't in fields and it starts with an "@" sign, get it out of data instead of fields
-    if ! @data["@fields"].has_key?(key) and key.slice(0,1) == "@"
-      return @data[key]
-    elsif key.index(/(?<!\\)\./)
-      value = nil
-      obj = @data["@fields"]
-      # "." is what ES uses to access structured data, so adopt that
-      # idea here, too.  "foo.bar" will access key "bar" under hash "foo".
-      key.split(/(?<!\\)\./).each do |segment|
-        segment.gsub!(/\\\./, ".")
-        if (obj.is_a?(Array) || (obj.is_a?(Hash) && !obj.member?(segment)) )
-          # try to safely cast segment to integer for the 0 in foo.0.bar
-          begin
-            segment = Integer(segment)
-          rescue Exception
-            #not an int, do nothing, segment remains a string
-          end
-        end
-        if obj
-          value = obj[segment] rescue nil
-          obj = obj[segment] rescue nil
-        else
-          value = nil
-          break
-        end
-      end # key.split.each
-      return value
+  def [](str)
+    if str[0,1] == "+"
     else
-      return @data["@fields"][key.gsub(/\\\./, ".")]
+      return LogStash::Util::FieldReference.exec(str, @data)
     end
   end # def []
   
   public
-  def []=(key, value)
-    if @data.has_key?(key)
-      @data[key] = value
-    else
-      @data["@fields"][key] = value
+  def []=(str, value)
+    r = LogStash::Util::FieldReference.exec(str, @data) do |obj, key|
+      obj[key] = value
     end
+
+    # The assignment can fail if the given field reference (str) does not exist
+    # In this case, we'll want to set the value manually.
+    if r.nil?
+      # TODO(sissel): Implement this in LogStash::Util::FieldReference
+      if str[0,1] != "["
+        return @data[str] = value
+      end
+
+      # No existing element was found, so let's set one.
+      *parents, key = str.scan(/(?<=\[)[^\]]+(?=\])/)
+      obj = @data
+      parents.each do |p|
+        if obj.include?(p)
+          obj = obj[p]
+        else
+          obj[p] = {}
+        end
+      end
+      obj[key] = value
+    end
+    return value
   end # def []=
 
-  def fields; return @data["@fields"] end # def fields
+  public
+  def fields
+    raise DeprecatedMethod
+  end
   
   public
-  def to_json(*args); return @data.to_json(*args) end # def to_json
-  def to_hash; return @data end # def to_hash
+  def to_json(*args)
+    return @data.to_json(*args) 
+  end # def to_json
+
+  def to_hash
+    return @data
+  end # def to_hash
 
   public
   def overwrite(event)
@@ -189,39 +174,16 @@ class LogStash::Event
   # Append an event to this one.
   public
   def append(event)
-    if event.message
-      if self.message
-        self.message += "\n" + event.message 
-      else
-        self.message = event.message
-      end
-    end
-    self.tags |= event.tags
+    # non-destructively merge that event with ourselves.
+    LogStash::Util.hash_merge(@data, event.to_hash)
+  end # append
 
-    # Append all fields
-    event.fields.each do |name, value|
-      if self.fields.include?(name)
-        if !self.fields[name].is_a?(Array)
-          self.fields[name] = [self.fields[name]]
-        end
-        if value.is_a?(Array)
-          self.fields[name] |= value
-        else
-          self.fields[name] << value unless self.fields[name].include?(value)
-        end
-      else
-        self.fields[name] = value
-      end
-    end # event.fields.each
-  end # def append
-
-  # Remove a field. Returns the value of that field when deleted
+  # Remove a field or field reference. Returns the value of that field when
+  # deleted
   public
-  def remove(field)
-    if @data.has_key?(field)
-      return @data.delete(field)
-    else
-      return @data["@fields"].delete(field)
+  def remove(str)
+    return LogStash::Util::FieldReference.exec(str, @data) do |obj, key|
+      next obj.delete(key)
     end
   end # def remove
 
@@ -253,50 +215,45 @@ class LogStash::Event
 
       if key == "+%s"
         # Got %{+%s}, support for unix epoch time
-        if RUBY_ENGINE != "jruby"
-          # This is really slow. See LOGSTASH-217
-          Time.parse(self.timestamp).to_i
-        else
-          datetime = @@date_parser.parseDateTime(self.timestamp)
-          (datetime.getMillis / 1000).to_i
-        end
+        next @data["@timestamp"].to_i
       elsif key[0,1] == "+"
-        # We got a %{+TIMEFORMAT} so use joda to format it.
-        if RUBY_ENGINE != "jruby"
-          # This is really slow. See LOGSTASH-217
-          datetime = Date.parse(self.timestamp)
-          format = key[1 .. -1]
-          datetime.strftime(format)
-        else
-          datetime = @@date_parser.parseDateTime(self.timestamp)
-          format = key[1 .. -1]
-          datetime.toString(format) # return requested time format
-        end
+        t = @data["@timestamp"]
+        formatter = org.joda.time.format.DateTimeFormat.forPattern(key[1 .. -1])\
+          .withZone(org.joda.time.DateTimeZone::UTC)
+        #next org.joda.time.Instant.new(t.tv_sec * 1000 + t.tv_usec / 1000).toDateTime.toString(formatter)
+        # Invoke a specific Instant constructor to avoid this warning in JRuby
+        #  > ambiguous Java methods found, using org.joda.time.Instant(long)
+        org.joda.time.Instant.java_class.constructor(Java::long).new_instance(
+          t.tv_sec * 1000 + t.tv_usec / 1000
+        ).to_java.toDateTime.toString(formatter)
       else
-        # Use an event field.
         value = self[key]
-
         case value
-        when nil
-          tok # leave the %{foo} if this field does not exist in this event.
-        when Array
-          value.join(",") # Join by ',' if value is an array
-        when Hash
-          value.to_json # Convert hashes to json
-        else
-          value # otherwise return the value
-        end
-      end
-    end
+          when nil
+            tok # leave the %{foo} if this field does not exist in this event.
+          when Array
+            value.join(",") # Join by ',' if value is an array
+          when Hash
+            value.to_json # Convert hashes to json
+          else
+            value # otherwise return the value
+        end # case value
+      end # 'key' checking
+    end # format.gsub...
   end # def sprintf
 
-  public
-  def ==(other)
-    #puts "#{self.class.name}#==(#{other.inspect})"
-    if !other.is_a?(self.class)
-      return false
-    end
+  # Shims to remove after event v1 is the default.
+  def tags=(value); self["tags"] = value; end
+  def tags; return self["tags"]; end
+  def message=(value); self["message"] = value; end
+  def source=(value); self["source"] = value; end
+  def type=(value); self["type"] = value; end
+  def type; return self["type"]; end
+  def fields; return self.to_hash; end
 
-    return other.to_hash == self.to_hash
-  end # def ==
+  def tag(value)
+    # Generalize this method for more usability
+    self["tags"] ||= []
+    self["tags"] << value unless self["tags"].include?(value)
+  end
 end # class LogStash::Event

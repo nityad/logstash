@@ -1,11 +1,44 @@
 require "logstash/outputs/base"
 require "logstash/namespace"
 
-
+# https://github.com/mikel/mail
+# supports equal(default), not equal(!), greater than(>), less than(<), greater than or equal(>=), less than or equal(<=), contains(*), does not contain(!*)
+# you must provide a matchName - which is the key.  Then provide your query values - again in key value pairs, separated by a ',' in the value spot.
+# You can say this : 
+# [ "response errors", "response,501,,or,response,301" ] 
+# I hate making requirements like this but this is the format that is the most flexible for making fine selections over data. 
+# NOTE: In the above example we are using just an equality test - so the two values must be exact for matches to be made. You must provide an AND/OR block 
+# between conditions so we know how to deal with them.  Please see below for an example where you wanted an AND instead of the OR default - this would require both to be valid. 
+# [ "response errors", "response,501,,and,response,301" ] 
+# as you can see you can just seperate the Operator logic with a blank key and the operator of your liking - AND/OR 
+# IMPORTANT : you MUST provide a "matchName". This is so I can easily be able to provide a label of sorts for the alert.  
+# In addition, we break after we find  the first valid match. 
+#
+#   email {
+#        tags => [ "sometag" ]
+#        match => [ "response errors", "response,501,,or,response,301",
+#                   "multiple response errors", "response,501,,and,response,301" ] 
+#        to => "main.contact@domain.com"
+#        from => "alert.account@domain.com" # default: logstash.alert@nowhere.com
+#        cc => "" # provide additional recipients
+#        options => [ "smtpIporHost", "smtp.gmail.com",
+#                     "port", "587",
+#                     "domain", "yourDomain", # optional
+#                     "userName", "yourSMTPUsername", 
+#                     "password", "PASS", 
+#                     "starttls", "true",
+#                     "authenticationType", "plain",
+#                     "debug", "true" # optional
+#                   ]
+#        via => "smtp" # or pop or sendmail
+#        subject => "Found '%{matchName}' Alert on %{@source_host}"
+#        body => "Here is the event line %{@message}"
+#        htmlbody => "<h2>%{matchName}</h2><br/><br/><h3>Full Event</h3><br/><br/><div align='center'>%{@message}</div>"
+#    }
 class LogStash::Outputs::Email < LogStash::Outputs::Base
 
   config_name "email"
-  plugin_status "experimental"
+  milestone 1
 
   # The registered fields that we want to monitor
   # A hash of matches of field => value
@@ -18,12 +51,19 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
   config :match, :validate => :hash, :required => true
 
   # The To address setting - fully qualified email address to send to
+  # This field also accept a comma separated list of emails like "me@host.com, you@host.com"
+  # You can also use dynamic field from the event with the %{fieldname} syntax
   config :to, :validate => :string, :required => true
 
   # The From setting for email - fully qualified email address for the From:
   config :from, :validate => :string, :default => "logstash.alert@nowhere.com"
 
+  # The Reply-To setting for email - fully qualified email address is required
+  # here.
+  config :replyto, :validate => :string
+
   # cc - send to others
+  # See *to* field for accepted value description
   config :cc, :validate => :string, :default => ""
 
   # how to send email: either smtp or sendmail - default to 'smtp'
@@ -90,64 +130,23 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
   public
   def register
     require "mail"
+
+    # Mail uses instance_eval which changes the scope of self so @options is
+    # inaccessible from inside 'Mail.defaults'. So set a local variable instead.
+    options = @options
+
     if @via == "smtp"
-      debug = @options.include?("debug")
-      if !debug
-        debug = false
-      else
-        debug = @options.fetch("debug")
-      end
-      smtpIporHost = @options.include?("smtpIporHost")
-      if !smtpIporHost
-        smtpIporHost = "localhost"
-      else
-        smtpIporHost = @options.fetch("smtpIporHost")
-      end
-      domain = @options.include?("domain")
-      if !domain
-        domain = "localhost"
-      else
-        domain = @options.fetch("domain")
-      end
-      port = @options.include?("port")
-      if !port
-        port = 25
-      else
-        port = @options.fetch("port")
-      end
-      tls = @options.include?("starttls")
-      if !tls
-        tls = false
-      else
-        tls = @options.fetch("starttls")
-      end
-      pass = @options.include?("password")
-      if !pass
-        pass = ""
-      else
-        pass = @options.fetch("password")
-      end
-      userName = @options.include?("userName")
-      if !userName
-        userName = ""
-      else
-        userName = @options.fetch("userName")
-      end
-      authenticationType = @options.include?("authenticationType")
-      if !authenticationType
-        authenticationType = "plain"
-      else
-        authenticationType = @options.fetch("authenticationType")
-      end
       Mail.defaults do
-        delivery_method :smtp , { :address   => smtpIporHost,
-                                  :port      => port,
-                                  :domain    => domain,
-                                  :user_name => userName,
-                                  :password  => pass,
-                                  :authentication => authenticationType,
-                                  :enable_starttls_auto => tls,
-                                  :debug => debug }
+        delivery_method :smtp, {
+          :address              => options.fetch("smtpIporHost", "localhost"),
+          :port                 => options.fetch("port", 25),
+          :domain               => options.fetch("domain", "localhost"),
+          :user_name            => options.fetch("userName", nil),
+          :password             => options.fetch("password", nil),
+          :authentication       => options.fetch("authenticationType", nil),
+          :enable_starttls_auto => options.fetch("starttls", false),
+          :debug                => options.fetch("debug", false)
+        }
       end
     elsif @via == 'sendmail'
       Mail.defaults do
@@ -155,7 +154,7 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
       end
     else
       Mail.defaults do
-        delivery_method :@via, @options
+        delivery_method :@via, options
       end
     end # @via tests
     @logger.debug("Email Output Registered!", :config => @config)
@@ -199,8 +198,8 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
             @logger.error("Operator Provided Is Not Found, Currently We Only Support AND/OR Values! - defaulting to OR")
           end
         else
-          hasField = event.fields.has_key?(field)
-          @logger.debug("Does Event Contain Field - ", :hasField => hasField)
+          hasField = event[field]
+          @logger.debug? and @logger.debug("Does Event Contain Field - ", :hasField => hasField)
           isValid = false
           # if we have maching field and value is wildcard - we have a success
           if hasField
@@ -208,8 +207,9 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
               isValid = true
             else
               # we get an array so we need to loop over the values and find if we have a match
-              eventFieldValues = event.fields.fetch(field)
-              @logger.debug("Event Field Values - ", :eventFieldValues => eventFieldValues)
+              eventFieldValues = event[field]
+              @logger.debug? and @logger.debug("Event Field Values - ", :eventFieldValues => eventFieldValues)
+              eventFieldValues = [eventFieldValues] if not eventFieldValues.respond_to?(:each)
               eventFieldValues.each do |eventFieldValue|
                 isValid = validateValue(eventFieldValue, value)
                 if isValid # no need to iterate any further
@@ -236,7 +236,7 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
     if successful
       # first add our custom field - matchName - so we can use it in the sprintf function
       event["matchName"] = matchName
-      @logger.debug("Sending mail with these settings : ", :via => @via, :options => @options, :from => @from, :to => @to, :cc => @cc, :subject => @subject, :body => @body, :content_type => @contenttype, :htmlbody => @htmlbody, :attachments => @attachments, :to => to, :to => to)
+      @logger.debug? and @logger.debug("Creating mail with these settings : ", :via => @via, :options => @options, :from => @from, :to => @to, :cc => @cc, :subject => @subject, :body => @body, :content_type => @contenttype, :htmlbody => @htmlbody, :attachments => @attachments, :to => to, :to => to)
       formatedSubject = event.sprintf(@subject)
       formattedBody = event.sprintf(@body)
       formattedHtmlBody = event.sprintf(@htmlbody)
@@ -244,13 +244,18 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
       mail = Mail.new
       mail.from = event.sprintf(@from)
       mail.to = event.sprintf(@to)
+      if @replyto
+        mail.reply_to = event.sprintf(@replyto)
+      end
       mail.cc = event.sprintf(@cc)
       mail.subject = formatedSubject
       if @htmlbody.empty?
+        formattedBody.gsub!(/\\n/, "\n") # Take new line in the email
         mail.body = formattedBody
       else
         mail.text_part = Mail::Part.new do
           content_type "text/plain; charset=UTF-8"
+          formattedBody.gsub!(/\\n/, "\n") # Take new line in the email
           body formattedBody
         end
         mail.html_part = Mail::Part.new do
@@ -261,6 +266,7 @@ class LogStash::Outputs::Email < LogStash::Outputs::Base
       @attachments.each do |fileLocation|
         mail.add_file(fileLocation)
       end # end @attachments.each
+      @logger.debug? and @logger.debug("Sending mail with these values : ", :from => mail.from, :to => mail.to, :cc => mail.cc, :subject => mail.subject)
       mail.deliver!
     end # end if successful
   end # def receive

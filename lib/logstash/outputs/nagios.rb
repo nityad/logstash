@@ -47,10 +47,10 @@ require "logstash/outputs/base"
 class LogStash::Outputs::Nagios < LogStash::Outputs::Base
 
   config_name "nagios"
-  plugin_status "beta"
+  milestone 2
 
   # The path to your nagios command file
-  config :commandfile, :validate => :string, :default => "/var/lib/nagios3/rw/nagios.cmd"
+  config :commandfile, :validate => :path, :default => "/var/lib/nagios3/rw/nagios.cmd"
 
   # The Nagios check level. Should be one of 0=OK, 1=WARNING, 2=CRITICAL,
   # 3=UNKNOWN. Defaults to 2 - CRITICAL.

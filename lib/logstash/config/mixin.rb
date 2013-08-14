@@ -47,11 +47,7 @@ module LogStash::Config::Mixin
     # For example: converting a string to a number, etc.
     
     # store the plugin type, turns LogStash::Inputs::Base into 'input'
-    @plugin_type = self.class.ancestors[1].name.split("::")[1].downcase.gsub(/s$/,"")
-    if !self.class.validate(params)
-      raise LogStash::Plugin::ConfigurationError,
-        I18n.t("logstash.agent.configuration.invalid_plugin_settings")
-    end
+    @plugin_type = self.class.ancestors.find { |a| a.name =~ /::Base$/ }.config_name
 
     # warn about deprecated variable use
     params.each do |name, value|
@@ -66,17 +62,20 @@ module LogStash::Config::Mixin
     self.class.get_config.each do |name, opts|
       next if params.include?(name.to_s)
       if opts.include?(:default) and (name.is_a?(Symbol) or name.is_a?(String))
-        if opts[:validate] == :password
-          @logger.debug("Converting default value in #{self.class.name} (#{name}) to password object")
-          params[name.to_s] = ::LogStash::Util::Password.new(opts[:default])
-        else
-          default = opts[:default]
-          if default.is_a?(Array) or default.is_a?(Hash)
-            default = default.clone
-          end
-          params[name.to_s] = default
+        # default values should be cloned if possible
+        # cloning prevents 
+        case opts[:default]
+          when FalseClass, TrueClass, NilClass, Fixnum
+            params[name.to_s] = opts[:default]
+          else
+            params[name.to_s] = opts[:default].clone
         end
       end
+    end
+
+    if !self.class.validate(params)
+      raise LogStash::ConfigurationError,
+        I18n.t("logstash.agent.configuration.invalid_plugin_settings")
     end
 
     # set instance variables like '@foo'  for each config value given.
@@ -103,8 +102,12 @@ module LogStash::Config::Mixin
     end
 
     def plugin_status(status=nil)
-      @plugin_status = status if !status.nil?
-      return @plugin_status
+      milestone(status)
+    end
+
+    def milestone(m=nil)
+      @milestone = m if !m.nil?
+      return @milestone
     end
 
     # Define a new configuration setting
@@ -158,15 +161,16 @@ module LogStash::Config::Mixin
         end
       end
       subclass.instance_variable_set("@config", subconfig)
+      @@milestone_notice_given = false
     end # def inherited
 
     def validate(params)
-      @plugin_name = config_name #[superclass.config_name, config_name].join("/")
-      @plugin_type = superclass.config_name
+      @plugin_name = config_name
+      @plugin_type = ancestors.find { |a| a.name =~ /::Base$/ }.config_name
       @logger = Cabin::Channel.get(LogStash)
       is_valid = true
 
-      is_valid &&= validate_plugin_status
+      is_valid &&= validate_milestone
       is_valid &&= validate_check_invalid_parameter_names(params)
       is_valid &&= validate_check_required_parameter_names(params)
       is_valid &&= validate_check_parameter_values(params)
@@ -174,22 +178,23 @@ module LogStash::Config::Mixin
       return is_valid
     end # def validate
 
-    def validate_plugin_status
-      docmsg = "For more information about plugin statuses, see http://logstash.net/docs/#{LOGSTASH_VERSION}/plugin-status "
-      case @plugin_status
-      when "unsupported"
-        @logger.warn("Using unsupported plugin '#{@config_name}'. This plugin isn't well supported by the community and likely has no maintainer. #{docmsg}")
-      when "experimental"
-        @logger.warn("Using experimental plugin '#{@config_name}'. This plugin is untested and may change in the future. #{docmsg}")
-      when "beta"
-        @logger.info("Using beta plugin '#{@config_name}'. #{docmsg}")
-      when "stable"
-        # This is cool. Nothing worth logging.
-      when nil
-        raise "#{@config_name} must set a plugin_status. #{docmsg}"
-      else
-        raise "#{@config_name} set an invalid plugin status #{@plugin_status}. Valid values are unsupported, experimental, beta and stable. #{docmsg}"
+    def validate_milestone
+      return true if @@milestone_notice_given
+      docmsg = "For more information about plugin milestones, see http://logstash.net/docs/#{LOGSTASH_VERSION}/plugin-milestones "
+      plugin_type = ancestors.find { |a| a.name =~ /::Base$/ }.config_name
+      case @milestone
+        when 0,1,2
+          @logger.warn(I18n.t("logstash.plugin.milestone.#{@milestone}", 
+                              :type => plugin_type, :name => @config_name,
+                              :LOGSTASH_VERSION => LOGSTASH_VERSION))
+        when 3
+          # No message to log for milestone 3 plugins.
+        when nil
+          raise "#{@config_name} must set a milestone. #{docmsg}"
+        else
+          raise "#{@config_name} set an invalid plugin status #{@milestone}. Valid values are 0, 1, 2, or 3. #{docmsg}"
       end
+      @@milestone_notice_given = true
       return true
     end
 
@@ -241,18 +246,8 @@ module LogStash::Config::Mixin
       #   config /foo.*/ => ... 
       is_valid = true
 
-      # string/symbols are first, then regexes.
-      config_keys = @config.keys.sort do |a,b|
-        CONFIGSORT[a.class] <=> CONFIGSORT[b.class] 
-      end
-      #puts "Key order: #{config_keys.inspect}"
-      #puts @config.keys.inspect
-
       params.each do |key, value|
-        config_keys.each do |config_key|
-          #puts
-          #puts "Candidate: #{key.inspect} / #{value.inspect}"
-          #puts "Config: #{config_key} / #{config_val} "
+        @config.keys.each do |config_key|
           next unless (config_key.is_a?(Regexp) && key =~ config_key) \
                       || (config_key.is_a?(String) && key == config_key)
           config_val = @config[config_key][:validate]
@@ -265,7 +260,8 @@ module LogStash::Config::Mixin
           else
             @logger.error(I18n.t("logstash.agent.configuration.setting_invalid",
                                  :plugin => @plugin_name, :type => @plugin_type,
-                                 :value => value, :value_type => config_val))
+                                 :setting => key, :value => value, :value_type => config_val,
+                                 :note => result))
           end
           #puts "Result: #{key} / #{result.inspect} / #{success}"
           is_valid &&= success
@@ -296,9 +292,8 @@ module LogStash::Config::Mixin
 
       if validator.nil?
         return true
-      elsif validator.is_a?(Proc)
-        return validator.call(value)
       elsif validator.is_a?(Array)
+        value = [*value]
         if value.size > 1
           return false, "Expected one of #{validator.inspect}, got #{value.inspect}"
         end
@@ -313,26 +308,34 @@ module LogStash::Config::Mixin
         value = hash_or_array(value)
 
         case validator
+          when :codec
+            if value.first.is_a?(String)
+              value = LogStash::Plugin.lookup("codec", value.first).new
+              return true, value
+            else
+              value = value.first
+              return true, value
+            end
           when :hash
             if value.is_a?(Hash)
-              result = value
-            else
-              if value.size % 2 == 1
-                return false, "This field must contain an even number of items, got #{value.size}"
-              end
+              return true, value
+            end
 
-              # Convert the array the config parser produces into a hash.
-              result = {}
-              value.each_slice(2) do |key, value|
-                entry = result[key]
-                if entry.nil?
-                  result[key] = value
+            if value.size % 2 == 1
+              return false, "This field must contain an even number of items, got #{value.size}"
+            end
+
+            # Convert the array the config parser produces into a hash.
+            result = {}
+            value.each_slice(2) do |key, value|
+              entry = result[key]
+              if entry.nil?
+                result[key] = value
+              else
+                if entry.is_a?(Array)
+                  entry << value
                 else
-                  if entry.is_a?(Array)
-                    entry << value
-                  else
-                    result[key] = [entry, value]
-                  end
+                  result[key] = [entry, value]
                 end
               end
             end
@@ -345,10 +348,11 @@ module LogStash::Config::Mixin
             result = value.first
           when :number
             if value.size > 1 # only one value wanted
-              return false, "Expected number, got #{value.inspect}"
+              return false, "Expected number, got #{value.inspect} (type #{value.class})"
             end
-            if value.first.to_s.to_i.to_s != value.first.to_s
-              return false, "Expected number, got #{value.first.inspect}"
+            if value.first.to_s.to_f.to_s != value.first.to_s \
+               && value.first.to_s.to_i.to_s != value.first.to_s
+              return false, "Expected number, got #{value.first.inspect} (type #{value.first})"
             end
             result = value.first.to_i
           when :boolean
@@ -389,6 +393,21 @@ module LogStash::Config::Mixin
             end
 
             result = ::LogStash::Util::Password.new(value.first)
+          when :path
+            if value.size > 1 # Only 1 value wanted
+              return false, "Expected path (one value), got #{value.size} values?"
+            end
+
+            # Paths must be absolute
+            #if !Pathname.new(value.first).absolute?
+              #return false, "Require absolute path, got relative path #{value.first}?"
+            #end
+
+            if !File.exists?(value.first) # Check if the file exists
+              return false, "File does not exist or cannot be opened #{value.first}"
+            end
+
+            result = value.first
         end # case validator
       else
         return false, "Unknown validator #{validator.class}"

@@ -3,28 +3,38 @@ require "logstash/event"
 require "logstash/plugin"
 require "logstash/logging"
 require "logstash/config/mixin"
+require "logstash/codecs/base"
 
 # This is the base class for logstash inputs.
 class LogStash::Inputs::Base < LogStash::Plugin
   include LogStash::Config::Mixin
   config_name "input"
 
-  # Label this input with a type.
-  # Types are used mainly for filter activation.
+  # Add a 'type' field to all events handled by this input.
   #
+  # Types are used mainly for filter activation.
   #
   # If you create an input with type "foobar", then only filters
   # which also have type "foobar" will act on them.
   #
   # The type is also stored as part of the event itself, so you
   # can also use the type to search for in the web interface.
-  config :type, :validate => :string, :required => true
+  #
+  # If you try to set a type on an event that already has one (for
+  # example when you send an event from a shipper to an indexer) then
+  # a new input will not override the existing type. A type set at 
+  # the shipper stays with that event for its life even
+  # when sent to another LogStash server.
+  config :type, :validate => :string
 
   # Set this to true to enable debugging on an input.
   config :debug, :validate => :boolean, :default => false
 
   # The format of input data (plain, json, json_event)
-  config :format, :validate => ["plain", "json", "json_event"]
+  config :format, :validate => ["plain", "json", "json_event", "msgpack_event"], :deprecated => true
+
+  # The codec used for input data
+  config :codec, :validate => :codec, :default => "plain"
 
   # The character encoding used in this input. Examples include "UTF-8"
   # and "cp1252"
@@ -56,7 +66,7 @@ class LogStash::Inputs::Base < LogStash::Plugin
   attr_accessor :threadable
 
   public
-  def initialize(params)
+  def initialize(params={})
     super
     @threadable = false
     config_init(params)
@@ -101,10 +111,11 @@ class LogStash::Inputs::Base < LogStash::Plugin
           event.message = raw
         end
       rescue => e
-        ## TODO(sissel): Instead of dropping the event, should we treat it as
-        ## plain text and try to do the best we can with it?
-        @logger.warn("Trouble parsing json input, falling back to plain text",
-                     :input => raw, :source => source, :exception => e)
+        # Instead of dropping the event, should we treat it as
+        # plain text and try to do the best we can with it?
+        @logger.info? and @logger.info("Trouble parsing json input, falling " \
+                                       "back to plain text", :input => raw,
+                                       :source => source, :exception => e)
         event.message = raw
         event.tags << "_jsonparsefailure"
       end
@@ -113,17 +124,38 @@ class LogStash::Inputs::Base < LogStash::Plugin
         # JSON must be valid UTF-8, and many inputs come from ruby IO
         # instances, which almost all default to ASCII-8BIT. Force UTF-8
         event = LogStash::Event.from_json(raw.force_encoding("UTF-8"))
-        event.tags += @tags
+        event["tags"] ||= []
+        event["tags"] += @tags
+        if @message_format
+          event.message ||= event.sprintf(@message_format)
+        end
+      rescue => e
+        # Instead of dropping the event, should we treat it as
+        # plain text and try to do the best we can with it?
+        @logger.info? and @logger.info("Trouble parsing json input, falling " \
+                                       "back to plain text", :input => raw,
+                                       :source => source, :exception => e, :stack => e.backtrace)
+        event.message = raw
+        event["tags"] ||= []
+        event["tags"] << "_jsonparsefailure"
+      end
+    when "msgpack_event"
+      begin
+        # Msgpack does not care about UTF-8
+        event = LogStash::Event.new(MessagePack.unpack(raw))
+        event["tags"] ||= []
+        event["tags"] |= @tags
         if @message_format
           event.message ||= event.sprintf(@message_format)
         end
       rescue => e
         ## TODO(sissel): Instead of dropping the event, should we treat it as
         ## plain text and try to do the best we can with it?
-        @logger.warn("Trouble parsing json input, falling back to plain text",
+        @logger.warn("Trouble parsing msgpack input, falling back to plain text",
                      :input => raw, :source => source, :exception => e)
         event.message = raw
-        event.tags << "_jsonparsefailure"
+        event["tags"] ||= []
+        event["tags"] << "_msgpackparsefailure"
       end
 
       if event.source == "unknown"
@@ -133,12 +165,15 @@ class LogStash::Inputs::Base < LogStash::Plugin
       raise "unknown event format #{@format}, this should never happen"
     end
 
-    event.type ||= @type
+    event["type"] = @type if @type
 
     @add_field.each do |field, value|
-       event[field] ||= []
-       event[field] = [event[field]] if !event[field].is_a?(Array)
-       event[field] << event.sprintf(value)
+      if event.include?(field)
+        event[field] = [event[field]] if !event[field].is_a?(Array)
+        event[field] << value
+      else
+        event[field] = value
+      end
     end
 
     @logger.debug? and @logger.debug("Received new event", :source => source, :event => event)

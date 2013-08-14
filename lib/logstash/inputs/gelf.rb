@@ -1,7 +1,6 @@
 require "date"
 require "logstash/inputs/base"
 require "logstash/namespace"
-require "logstash/time_addon" # should really use the filters/date.rb bits
 require "socket"
 
 # Read gelf messages as events over the network.
@@ -13,7 +12,7 @@ require "socket"
 #
 class LogStash::Inputs::Gelf < LogStash::Inputs::Base
   config_name "gelf"
-  plugin_status "beta"
+  milestone 2
 
   # The address to listen on
   config :host, :validate => :string, :default => "0.0.0.0"
@@ -80,7 +79,11 @@ class LogStash::Inputs::Gelf < LogStash::Inputs::Base
       line, client = @udp.recvfrom(8192)
       # Ruby uri sucks, so don't use it.
       source = "gelf://#{client[3]}/"
-      data = Gelfd::Parser.parse(line)
+      begin
+        data = Gelfd::Parser.parse(line)
+      rescue => ex
+        @logger.warn("Gelfd failed to parse a message skipping", :exception => ex, :backtrace => ex.backtrace)
+      end
 
       # The nil guard is needed to deal with chunked messages.
       # Gelfd::Parser.parse will only return the message when all chunks are

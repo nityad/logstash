@@ -12,7 +12,7 @@ require "thread"
 class LogStash::Outputs::Tcp < LogStash::Outputs::Base
 
   config_name "tcp"
-  plugin_status "beta"
+  milestone 2
 
   # When mode is `server`, the address to listen on.
   # When mode is `client`, the address to connect to.
@@ -21,6 +21,9 @@ class LogStash::Outputs::Tcp < LogStash::Outputs::Base
   # When mode is `server`, the port to listen on.
   # When mode is `client`, the port to connect to.
   config :port, :validate => :number, :required => true
+  
+  # When connect failed,retry interval in sec.
+  config :reconnect_interval, :validate => :number, :default => 10
 
   # Mode to operate in. `server` listens for client connections,
   # `client` connects to a server.
@@ -116,7 +119,9 @@ class LogStash::Outputs::Tcp < LogStash::Outputs::Base
       rescue => e
         @logger.warn("tcp output exception", :host => @host, :port => @port,
                      :exception => e, :backtrace => e.backtrace)
+        sleep @reconnect_interval
         @client_socket = nil
+        retry
       end
     end
   end # def receive

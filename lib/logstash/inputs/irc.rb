@@ -7,13 +7,16 @@ require "thread"
 class LogStash::Inputs::Irc < LogStash::Inputs::Base
 
   config_name "irc"
-  plugin_status "experimental"
+  milestone 1
 
   # Host of the IRC Server to connect to.
   config :host, :validate => :string, :required => true
 
   # Port for the IRC Server
   config :port, :validate => :number, :required => true
+
+  # Set this to true to enable SSL.
+  config :secure, :validate => :boolean, :default => false
 
   # IRC Nickname
   config :nick, :validate => :string, :default => "logstash"
@@ -27,7 +30,10 @@ class LogStash::Inputs::Irc < LogStash::Inputs::Base
   # IRC Server password
   config :password, :validate => :password
 
-  # Channels to listen to
+  # Channels to join and read messages from.
+  #
+  # These should be full channel names including the '#' symbol, such as
+  # "#logstash".
   config :channels, :validate => :array, :required => true
 
 
@@ -47,10 +53,11 @@ class LogStash::Inputs::Irc < LogStash::Inputs::Base
       c.server = @host
       c.port = @port
       c.nick = @nick
-      c.realname = @real
       c.user = @user
+      c.realname = @real
       c.channels = @channels
-      c.password = @password
+      c.password = @password.value rescue nil
+      c.ssl.use = @secure
     end
     queue = @irc_queue
     @bot.on :channel  do |m|
@@ -65,10 +72,12 @@ class LogStash::Inputs::Irc < LogStash::Inputs::Base
     end
     loop do
       msg = @irc_queue.pop
-      event = self.to_event(msg.message, "irc://#{@host}:#{@port}/#{msg.channel}")
-      event["channel"] = msg.channel
-      event["nick"] = msg.user.nick
-      output_queue << event
+      if msg.user
+        event = self.to_event(msg.message, "irc://#{@host}:#{@port}/#{msg.channel}")
+        event["channel"] = msg.channel
+        event["nick"] = msg.user.nick
+        output_queue << event
+      end
     end
   end # def run
 end # class LogStash::Inputs::Irc

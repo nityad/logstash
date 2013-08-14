@@ -11,13 +11,13 @@ require "yaml"
 class LogStash::Filters::Checksum < LogStash::Filters::Base
 
   config_name "checksum"
-  plugin_status "experimental"
+  milestone 1
 
   # A list of keys to use in creating the string to checksum
   # Keys will be sorted before building the string
   # keys and values will then be concatenated with pipe delimeters
   # and checksummed
-  config :keys, :validate => :array, :default => ["@message", "@source_host", "@timestamp", "@source_path", "@type", "@source"]
+  config :keys, :validate => :array, :default => ["message", "@timestamp", "type"]
 
   config :algorithm, :validate => ["md5", "sha128", "sha256", "sha384"], :default => "sha256"
 
@@ -44,4 +44,4 @@ class LogStash::Filters::Checksum < LogStash::Filters::Base
     @logger.debug("Digested string", :digested_string => digested_string)
     event.fields['logstash_checksum'] = digested_string
   end
-end
+end # class LogStash::Filters::Checksum

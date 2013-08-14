@@ -1,6 +1,5 @@
 require "logstash/filters/base"
 require "logstash/namespace"
-require "logstash/time_addon"
 
 # The mutate filter allows you to do general mutations to fields. You
 # can rename, remove, replace, and modify fields in your events.
@@ -8,7 +7,7 @@ require "logstash/time_addon"
 # TODO(sissel): Support regexp replacements like String#gsub ?
 class LogStash::Filters::Mutate < LogStash::Filters::Base
   config_name "mutate"
-  plugin_status "stable"
+  milestone 3
 
   # Rename one or more fields.
   #
@@ -31,7 +30,10 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   #         remove => [ "client" ]  # Removes the 'client' field
   #       }
   #     }
-  config :remove, :validate => :array
+  #
+  # This option is deprecated, instead use remove_field option available in all
+  # filters.
+  config :remove, :validate => :array, :deprecated => true
 
   # Replace a field with a new value. The new value can include %{foo} strings
   # to help you build a new value from other parts of the event.
@@ -40,10 +42,22 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   # 
   #     filter {
   #       mutate {
-  #         replace => [ "@message", "%{source_host}: My new message" ]
+  #         replace => [ "message", "%{source_host}: My new message" ]
   #       }
   #     }
   config :replace, :validate => :hash
+
+  # Update an existing field with a new value. If the field does not exist,
+  # then no action will be taken.
+  #
+  # Example:
+  # 
+  #     filter {
+  #       mutate {
+  #         update => [ "sample", "My new message" ]
+  #       }
+  #     }
+  config :update, :validate => :hash
 
   # Convert a field's value to a different type, like turning a string to an
   # integer. If the field value is an array, all members will be converted.
@@ -74,11 +88,11 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   #       mutate {
   #         gsub => [
   #           # replace all forward slashes with underscore
-  #           "fieldname", "\\/", "_",
+  #           "fieldname", "/", "_",
   #
-  #           # replace backslashes, question marks, hashes and minuses with
-  #           # underscore
-  #           "fieldname", "[\\?#-]", "_"
+  #           # replace backslashes, question marks, hashes, and minuses with
+  #           # dot
+  #           "fieldname2", "[\\?#-]", "."
   #         ]
   #       }
   #     }
@@ -141,6 +155,21 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   #     }
   config :strip, :validate => :array
 
+  # merge two fields or arrays or hashes
+  # String fields will be converted in array, so 
+  #  array + string will work
+  #  string + string will result in an 2 entry array in dest_field
+  #  array and hash will not work
+  #
+  # Example:
+  #
+  #     filter {
+  #       mutate { 
+  #          merge => ["dest_field", "added_field"]
+  #       }
+  #     }
+  config :merge, :validate => :hash
+
   public
   def register
     valid_conversions = %w(string integer float)
@@ -174,6 +203,7 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
     return unless filter?(event)
 
     rename(event) if @rename
+    update(event) if @update
     replace(event) if @replace
     convert(event) if @convert
     gsub(event) if @gsub
@@ -182,6 +212,7 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
     remove(event) if @remove
     split(event) if @split
     join(event) if @join
+    merge(event) if @merge
 
     filter_matched(event)
   end # def filter
@@ -204,10 +235,16 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
   end # def rename
 
   private
-  def replace(event)
-    # TODO(sissel): use event.sprintf on the field names?
-    @replace.each do |field, newvalue|
+  def update(event)
+    @update.each do |field, newvalue|
       next unless event.include?(field)
+      event[field] = event.sprintf(newvalue)
+    end
+  end # def update
+
+  private
+  def replace(event)
+    @replace.each do |field, newvalue|
       event[field] = event.sprintf(newvalue)
     end
   end # def replace
@@ -307,6 +344,9 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
     @split.each do |field, separator|
       if event[field].is_a?(String)
         event[field] = event[field].split(separator)
+      else 
+        @logger.debug("Can't split something that isn't a string",
+                      :field => field, :value => event[field])
       end
     end
   end
@@ -327,6 +367,29 @@ class LogStash::Filters::Mutate < LogStash::Filters::Base
         event[field] = event[field].map{|s| s.strip }
       elsif event[field].is_a?(String)
         event[field] = event[field].strip
+      end
+    end
+  end
+
+  private
+  def merge(event)
+    @merge.each do |dest_field, added_fields|
+      #When multiple calls, added_field is an array
+      added_fields = [ added_fields ] if ! added_fields.is_a?(Array)
+      added_fields.each do |added_field|
+        if event[dest_field].is_a?(Hash) ^ event[added_field].is_a?(Hash)
+          @logger.error("Not possible to merge an array and a hash: ",
+                        :dest_field => dest_field,
+                        :added_field => added_field )
+          next
+        end
+        if event[dest_field].is_a?(Hash) #No need to test the other
+          event[dest_field].update(event[added_field])
+        else
+          event[dest_field] = [event[dest_field]] if ! event[dest_field].is_a?(Array)
+          event[added_field] = [event[added_field]] if ! event[added_field].is_a?(Array)
+         event[dest_field].concat(event[added_field])
+        end
       end
     end
   end
